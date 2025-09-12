@@ -7,8 +7,15 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 import logging
+import math
 from typing import Optional, Dict, Any
 from bnb.binance import RobotBinance
+
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    TALIB_AVAILABLE = False
 
 class TechnicalAnalyzer:
     """
@@ -350,3 +357,257 @@ class TechnicalAnalyzer:
             return 'SQUEEZE_OFF'
         else:
             return 'NO_SQUEEZE'
+    
+    def trend_magic_v2(self, period: int = 20, coeff: float = 1.0, atr_period: int = 5) -> Dict[str, Any]:
+        """
+        Alternative Trend Magic implementation (Version 2)
+        Based on your previous working code - for comparison with current version
+        
+        Args:
+            period: CCI period (default: 20)
+            coeff: ATR multiplier (default: 1.0)
+            atr_period: ATR period (default: 5)
+            
+        Returns:
+            Dictionary with Trend Magic V2 analysis
+        """
+        if self.df is None or self.df.empty:
+            raise ValueError("No market data available. Call fetch_market_data() first")
+        
+        try:
+            data = self.df.copy()
+            
+            # Calculate CCI using pandas_ta
+            cci = ta.cci(data['high'], data['low'], data['close'], length=period)
+            
+            # Calculate ATR using pandas_ta
+            atr = ta.atr(data['high'], data['low'], data['close'], length=atr_period)
+            
+            # Calculate upper and lower bands
+            up = data['low'] - atr * coeff
+            down = data['high'] + atr * coeff
+            
+            # Initialize magic_trend series
+            magic_trend = pd.Series([0.0] * len(data), index=data.index)
+            
+            # Calculate magic trend using your original logic
+            for i in range(len(data)):
+                # Determine color based on CCI
+                current_color = 'BLUE' if cci.iloc[i] > 0 else 'RED'
+                
+                if cci.iloc[i] >= 0:
+                    if not pd.isna(up.iloc[i]):
+                        magic_trend.iloc[i] = up.iloc[i] if i == 0 else max(up.iloc[i], magic_trend.iloc[i - 1])
+                    else:
+                        magic_trend.iloc[i] = magic_trend.iloc[i - 1] if i > 0 else np.nan
+                else:
+                    if not pd.isna(down.iloc[i]):
+                        magic_trend.iloc[i] = down.iloc[i] if i == 0 else min(down.iloc[i], magic_trend.iloc[i - 1])
+                    else:
+                        magic_trend.iloc[i] = magic_trend.iloc[i - 1] if i > 0 else np.nan
+            
+            # Get current values
+            current_magic_trend = magic_trend.iloc[-1]
+            current_cci = cci.iloc[-1]
+            current_price = data['close'].iloc[-1]
+            
+            # Determine current color
+            current_color = 'BLUE' if current_cci > 0 else 'RED'
+            
+            # Determine trend status
+            if current_color == 'BLUE':
+                trend_status = "🔵 BULLISH MAGIC V2"
+                trend_emoji = "🐂"
+            else:
+                trend_status = "🔴 BEARISH MAGIC V2"
+                trend_emoji = "🐻"
+            
+            # Calculate distance from trend line
+            if not pd.isna(current_magic_trend) and current_magic_trend != 0:
+                distance_pct = ((current_price - current_magic_trend) / current_magic_trend) * 100
+            else:
+                distance_pct = 0.0
+            
+            # Detect signals (simplified version)
+            buy_signal = False
+            sell_signal = False
+            
+            if len(data) > 1:
+                prev_low = data['low'].iloc[-2]
+                prev_magic = magic_trend.iloc[-2]
+                current_low = data['low'].iloc[-1]
+                
+                # Buy signal: low crosses above magic trend
+                if prev_low <= prev_magic and current_low > current_magic_trend:
+                    buy_signal = True
+                
+                prev_high = data['high'].iloc[-2]
+                current_high = data['high'].iloc[-1]
+                
+                # Sell signal: high crosses below magic trend
+                if prev_high >= prev_magic and current_high < current_magic_trend:
+                    sell_signal = True
+            
+            result = {
+                'magic_trend_value': round(current_magic_trend, 3) if not pd.isna(current_magic_trend) else 0.0,
+                'color': current_color,
+                'trend_status': trend_status,
+                'trend_emoji': trend_emoji,
+                'cci_value': current_cci,
+                'atr_value': atr.iloc[-1],
+                'distance_pct': distance_pct,
+                'buy_signal': buy_signal,
+                'sell_signal': sell_signal,
+                'current_price': current_price,
+                'version': 'V2'
+            }
+            
+            self.logger.info(f"🔮 Trend Magic V2 calculated: {trend_status}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"💀 Trend Magic V2 calculation failed: {str(e)}")
+            raise
+    
+    def get_trend_magic_v2_color(self, period: int = 20, coeff: float = 1.0, atr_period: int = 5) -> str:
+        """
+        Get only the Trend Magic V2 color
+        
+        Returns:
+            'BLUE' for bullish or 'RED' for bearish
+        """
+        magic_data = self.trend_magic_v2(period, coeff, atr_period)
+        return magic_data['color']
+    
+    def trend_magic_v3(self, period: int = 20, coeff: float = 1.0, atr_period: int = 5) -> Dict[str, Any]:
+        """
+        Trend Magic V3 - Using TA-Lib directly (your original implementation)
+        This version uses TA-Lib exactly as in your original code
+        
+        Args:
+            period: CCI period (default: 20)
+            coeff: ATR multiplier (default: 1.0)
+            atr_period: ATR period (default: 5)
+            
+        Returns:
+            Dictionary with Trend Magic V3 analysis
+        """
+        if not TALIB_AVAILABLE:
+            raise ImportError("TA-Lib is required for trend_magic_v3. Install with: pip install TA-Lib")
+        
+        if self.df is None or self.df.empty:
+            raise ValueError("No market data available. Call fetch_market_data() first")
+        
+        try:
+            data = self.df.copy()
+            
+            # Extract OHLC arrays for TA-Lib
+            high = data['high'].values
+            low = data['low'].values
+            close = data['close'].values
+            
+            # Calculate CCI using TA-Lib (exactly as in your original code)
+            cci = talib.CCI(high, low, close, timeperiod=period)
+            
+            # Calculate ATR using TA-Lib
+            atr = talib.ATR(high, low, close, timeperiod=atr_period)
+            
+            # Calculate upper and lower bands
+            up = low - atr * coeff
+            down = high + atr * coeff
+            
+            # Initialize magic_trend series (exactly as in your original code)
+            magic_trend = pd.Series([0.0] * len(data), index=data.index)
+            
+            # Calculate magic trend using your exact original logic
+            for i in range(len(data)):
+                # Define color based on CCI (exactly as in your original code)
+                current_color = 'BLUE' if cci[i] > 0 else 'RED'
+                
+                if cci[i] >= 0:
+                    if not math.isnan(up[i]):
+                        magic_trend.iloc[i] = up[i] if i == 0 else max(up[i], magic_trend.iloc[i - 1])
+                    else:
+                        magic_trend.iloc[i] = magic_trend.iloc[i - 1] if i > 0 else np.nan
+                else:
+                    if not math.isnan(down[i]):
+                        magic_trend.iloc[i] = down[i] if i == 0 else min(down[i], magic_trend.iloc[i - 1])
+                    else:
+                        magic_trend.iloc[i] = magic_trend.iloc[i - 1] if i > 0 else np.nan
+            
+            # Get current values (exactly as in your original code)
+            current_magic_trend = magic_trend.iloc[-1]
+            current_cci = cci[-1]
+            current_price = close[-1]
+            
+            # Determine current color
+            current_color = 'BLUE' if current_cci > 0 else 'RED'
+            
+            # Determine trend status
+            if current_color == 'BLUE':
+                trend_status = "🔵 BULLISH MAGIC V3"
+                trend_emoji = "🐂"
+            else:
+                trend_status = "🔴 BEARISH MAGIC V3"
+                trend_emoji = "🐻"
+            
+            # Calculate distance from trend line
+            if not math.isnan(current_magic_trend) and current_magic_trend != 0:
+                distance_pct = ((current_price - current_magic_trend) / current_magic_trend) * 100
+            else:
+                distance_pct = 0.0
+            
+            # Detect signals (simplified version)
+            buy_signal = False
+            sell_signal = False
+            
+            if len(data) > 1:
+                prev_low = low[-2]
+                prev_magic = magic_trend.iloc[-2]
+                current_low = low[-1]
+                
+                # Buy signal: low crosses above magic trend
+                if prev_low <= prev_magic and current_low > current_magic_trend:
+                    buy_signal = True
+                
+                prev_high = high[-2]
+                current_high = high[-1]
+                
+                # Sell signal: high crosses below magic trend
+                if prev_high >= prev_magic and current_high < current_magic_trend:
+                    sell_signal = True
+            
+            # Return exactly as in your original code format
+            result = {
+                'magic_trend_value': round(current_magic_trend, 3) if not math.isnan(current_magic_trend) else 0.0,
+                'color': current_color,
+                'trend_status': trend_status,
+                'trend_emoji': trend_emoji,
+                'cci_value': current_cci,
+                'atr_value': atr[-1],
+                'distance_pct': distance_pct,
+                'buy_signal': buy_signal,
+                'sell_signal': sell_signal,
+                'current_price': current_price,
+                'version': 'V3_TALIB'
+            }
+            
+            self.logger.info(f"🔮 Trend Magic V3 (TA-Lib) calculated: {trend_status}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"💀 Trend Magic V3 calculation failed: {str(e)}")
+            raise
+    
+    def get_trend_magic_v3_color(self, period: int = 20, coeff: float = 1.0, atr_period: int = 5) -> str:
+        """
+        Get only the Trend Magic V3 color (TA-Lib version)
+        
+        Returns:
+            'BLUE' for bullish or 'RED' for bearish
+        """
+        if not TALIB_AVAILABLE:
+            raise ImportError("TA-Lib is required for trend_magic_v3")
+        
+        magic_data = self.trend_magic_v3(period, coeff, atr_period)
+        return magic_data['color']
