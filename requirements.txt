@@ -1,0 +1,11 @@
+# Data manipulation
+pandas
+
+# Technical analysis
+pandas_ta
+
+# Environment variables
+python-dotenv
+
+# Binance API client
+binance-futures-connector
