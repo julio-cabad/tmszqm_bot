@@ -1,225 +1,194 @@
 """
-Risk Management Models
-Data structures for risk calculations and portfolio management
+Risk Management Data Models
+Standardized models for risk calculations and assessments
 """
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Dict, Any, Optional
 from enum import Enum
+
+
+class Direction(Enum):
+    """Trading direction"""
+    LONG = "LONG"
+    SHORT = "SHORT"
 
 
 class RiskLevel(Enum):
     """Risk level classification"""
-    VERY_LOW = "very_low"      # < 1%
-    LOW = "low"                # 1-2%
-    MEDIUM = "medium"          # 2-3%
-    HIGH = "high"              # 3-5%
-    VERY_HIGH = "very_high"    # > 5%
-
-
-class PositionType(Enum):
-    """Position type"""
-    LONG = "long"
-    SHORT = "short"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    EXTREME = "EXTREME"
 
 
 @dataclass
-class RiskParameters:
-    """
-    Risk parameters for position calculation
-    """
-    # Account settings
-    account_balance: float
-    max_risk_per_trade: float  # Percentage (e.g., 2.0 for 2%)
-    max_portfolio_risk: float  # Percentage (e.g., 10.0 for 10%)
-    
-    # Position limits
-    max_positions: int
-    max_positions_per_symbol: int
-    
-    # Risk multipliers based on signal strength
-    risk_multiplier_very_strong: float = 1.5  # 150% of base risk for very strong signals
-    risk_multiplier_strong: float = 1.2       # 120% of base risk for strong signals
-    risk_multiplier_medium: float = 1.0       # 100% of base risk for medium signals
-    risk_multiplier_weak: float = 0.7         # 70% of base risk for weak signals
-    risk_multiplier_very_weak: float = 0.5    # 50% of base risk for very weak signals
-    
-    # Stop loss settings
-    min_stop_loss_distance: float = 0.005     # Minimum 0.5% stop loss
-    max_stop_loss_distance: float = 0.05      # Maximum 5% stop loss
-    
-    # Take profit settings
-    default_risk_reward_ratios: List[float] = None
-    
-    def __post_init__(self):
-        if self.default_risk_reward_ratios is None:
-            self.default_risk_reward_ratios = [1.5, 2.5, 4.0]  # Multiple TP levels
-    
-    def get_risk_multiplier(self, signal_strength: float) -> float:
-        """Get risk multiplier based on signal strength"""
-        if signal_strength >= 0.85:
-            return self.risk_multiplier_very_strong
-        elif signal_strength >= 0.75:
-            return self.risk_multiplier_strong
-        elif signal_strength >= 0.60:
-            return self.risk_multiplier_medium
-        elif signal_strength >= 0.40:
-            return self.risk_multiplier_weak
-        else:
-            return self.risk_multiplier_very_weak
-    
-    def classify_risk_level(self, risk_percentage: float) -> RiskLevel:
-        """Classify risk level based on percentage"""
-        if risk_percentage < 1.0:
-            return RiskLevel.VERY_LOW
-        elif risk_percentage < 2.0:
-            return RiskLevel.LOW
-        elif risk_percentage < 3.0:
-            return RiskLevel.MEDIUM
-        elif risk_percentage < 5.0:
-            return RiskLevel.HIGH
-        else:
-            return RiskLevel.VERY_HIGH
-
-
-@dataclass
-class PositionRisk:
-    """
-    Risk calculation result for a single position
-    """
+class PositionSize:
+    """Position size calculation result"""
     symbol: str
-    position_type: PositionType
-    
-    # Price levels
+    direction: Direction
+    account_balance: float
+    risk_percentage: float
     entry_price: float
-    stop_loss: float
-    take_profit_levels: List[float]
+    stop_loss_price: float
     
-    # Position sizing
-    position_size_usd: float
-    position_size_percentage: float
-    position_size_units: float  # Number of units/coins
+    # Calculated values
+    risk_amount: float  # Dollar amount at risk
+    position_size_usd: float  # Position size in USD
+    position_size_base: float  # Position size in base currency
+    leverage_used: float  # Leverage multiplier
     
     # Risk metrics
-    risk_amount_usd: float
-    risk_percentage: float
-    risk_level: RiskLevel
+    risk_reward_ratio: float
+    max_loss_percentage: float
     
-    # Reward metrics
-    potential_rewards_usd: List[float]  # For each TP level
-    risk_reward_ratios: List[float]     # For each TP level
+    timestamp: datetime
     
-    # Signal context
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for logging/storage"""
+        return {
+            'symbol': self.symbol,
+            'direction': self.direction.value,
+            'account_balance': self.account_balance,
+            'risk_percentage': self.risk_percentage,
+            'entry_price': self.entry_price,
+            'stop_loss_price': self.stop_loss_price,
+            'risk_amount': self.risk_amount,
+            'position_size_usd': self.position_size_usd,
+            'position_size_base': self.position_size_base,
+            'leverage_used': self.leverage_used,
+            'risk_reward_ratio': self.risk_reward_ratio,
+            'max_loss_percentage': self.max_loss_percentage,
+            'timestamp': self.timestamp.isoformat()
+        }
+
+
+@dataclass
+class StopLoss:
+    """Stop loss calculation result"""
+    symbol: str
+    direction: Direction
+    entry_price: float
+    
+    # Stop loss levels
+    trend_magic_stop: float  # Based on Trend Magic line
+    atr_stop: float  # Based on ATR calculation
+    percentage_stop: float  # Based on percentage
+    
+    # Recommended stop
+    recommended_stop: float
+    stop_type: str  # Type of recommended stop
+    
+    # Risk metrics
+    stop_distance_pips: float
+    stop_distance_percentage: float
+    
+    timestamp: datetime
+
+
+@dataclass
+class TakeProfit:
+    """Take profit levels calculation"""
+    symbol: str
+    direction: Direction
+    entry_price: float
+    stop_loss_price: float
+    
+    # Multiple take profit levels
+    tp1_price: float  # Conservative target (1:1 R:R)
+    tp2_price: float  # Moderate target (1:2 R:R)
+    tp3_price: float  # Aggressive target (1:3 R:R)
+    
+    # Risk-reward ratios
+    tp1_rr_ratio: float
+    tp2_rr_ratio: float
+    tp3_rr_ratio: float
+    
+    # Percentage allocations
+    tp1_allocation: float  # Percentage of position to close at TP1
+    tp2_allocation: float  # Percentage of position to close at TP2
+    tp3_allocation: float  # Percentage of position to close at TP3
+    
+    timestamp: datetime
+
+
+@dataclass
+class RiskAssessment:
+    """Comprehensive risk assessment for a trading signal"""
+    symbol: str
+    direction: Direction
     signal_strength: float
-    signal_type: str
     
-    # Validation
+    # Position sizing
+    position_size: PositionSize
+    
+    # Risk management
+    stop_loss: StopLoss
+    take_profit: TakeProfit
+    
+    # Risk classification
+    risk_level: RiskLevel
+    risk_score: float  # 0.0 to 1.0
+    
+    # Validation results
     is_valid: bool
     validation_errors: List[str]
+    validation_warnings: List[str]
     
-    # Metadata
-    calculated_at: datetime
+    # Market conditions
+    volatility_assessment: str
+    liquidity_assessment: str
     
-    def get_best_risk_reward(self) -> float:
-        """Get the best risk/reward ratio"""
-        return max(self.risk_reward_ratios) if self.risk_reward_ratios else 0.0
+    # Portfolio impact
+    portfolio_risk_percentage: float
+    correlation_risk: float
     
-    def get_total_potential_reward(self) -> float:
-        """Get total potential reward if all TPs hit"""
-        return sum(self.potential_rewards_usd) if self.potential_rewards_usd else 0.0
+    timestamp: datetime
     
-    def is_acceptable_risk(self) -> bool:
-        """Check if risk is acceptable"""
-        return (self.is_valid and 
-                self.risk_level in [RiskLevel.VERY_LOW, RiskLevel.LOW, RiskLevel.MEDIUM] and
-                len(self.validation_errors) == 0)
+    def get_risk_summary(self) -> Dict[str, Any]:
+        """Get summary of risk assessment"""
+        return {
+            'symbol': self.symbol,
+            'direction': self.direction.value,
+            'risk_level': self.risk_level.value,
+            'risk_score': self.risk_score,
+            'position_size_usd': self.position_size.position_size_usd,
+            'risk_amount': self.position_size.risk_amount,
+            'risk_reward_ratio': self.position_size.risk_reward_ratio,
+            'stop_loss_price': self.stop_loss.recommended_stop,
+            'take_profit_1': self.take_profit.tp1_price,
+            'take_profit_2': self.take_profit.tp2_price,
+            'take_profit_3': self.take_profit.tp3_price,
+            'is_valid': self.is_valid,
+            'validation_errors': len(self.validation_errors),
+            'validation_warnings': len(self.validation_warnings)
+        }
 
 
 @dataclass
 class PortfolioRisk:
-    """
-    Portfolio-level risk analysis
-    """
-    # Current portfolio state
+    """Portfolio-level risk assessment"""
     total_account_balance: float
-    current_positions: List[PositionRisk]
-    
-    # Risk metrics
-    total_risk_usd: float
+    total_risk_amount: float
     total_risk_percentage: float
-    available_risk_usd: float
-    available_risk_percentage: float
     
-    # Position metrics
-    active_positions_count: int
+    # Position breakdown
+    active_positions: int
     max_positions: int
-    positions_by_symbol: Dict[str, int]
     
-    # Correlation analysis
-    symbol_correlation_risk: float  # Risk from correlated positions
+    # Risk distribution
+    risk_per_symbol: Dict[str, float]
+    correlation_matrix: Dict[str, Dict[str, float]]
     
-    # Portfolio limits
-    portfolio_risk_level: RiskLevel
-    can_add_position: bool
-    max_new_position_size: float
+    # Risk limits
+    daily_risk_limit: float
+    weekly_risk_limit: float
+    monthly_risk_limit: float
     
-    # Warnings and recommendations
-    risk_warnings: List[str]
-    recommendations: List[str]
-    
-    # Metadata
-    calculated_at: datetime
-    
-    def get_risk_utilization(self) -> float:
-        """Get percentage of total risk capacity being used"""
-        max_portfolio_risk = 10.0  # 10% max portfolio risk
-        return (self.total_risk_percentage / max_portfolio_risk) * 100
-    
-    def is_overexposed(self) -> bool:
-        """Check if portfolio is overexposed to risk"""
-        return (self.total_risk_percentage > 8.0 or  # More than 8% total risk
-                self.get_risk_utilization() > 80)    # More than 80% risk utilization
-    
-    def get_diversification_score(self) -> float:
-        """Calculate diversification score (0-1, higher is better)"""
-        if not self.current_positions:
-            return 1.0
-        
-        # Simple diversification based on number of different symbols
-        unique_symbols = len(set(pos.symbol for pos in self.current_positions))
-        max_diversification = min(len(self.current_positions), 10)  # Max 10 for perfect diversification
-        
-        return unique_symbols / max_diversification if max_diversification > 0 else 0.0
-
-
-@dataclass
-class RiskValidationResult:
-    """
-    Result of risk validation checks
-    """
-    is_valid: bool
+    # Risk status
     risk_level: RiskLevel
-    errors: List[str]
-    warnings: List[str]
-    recommendations: List[str]
+    can_take_new_position: bool
+    recommended_position_size_multiplier: float
     
-    # Specific validations
-    position_size_valid: bool
-    stop_loss_valid: bool
-    portfolio_risk_valid: bool
-    correlation_risk_valid: bool
-    
-    # Calculated metrics
-    final_position_size: float
-    adjusted_stop_loss: float
-    expected_risk_reward: float
-    
-    def has_blocking_errors(self) -> bool:
-        """Check if there are errors that block position opening"""
-        return not self.is_valid or len(self.errors) > 0
-    
-    def get_risk_summary(self) -> str:
-        """Get human-readable risk summary"""
-        status = "APPROVED" if self.is_valid else "REJECTED"
-        return f"{status} | {self.risk_level.value.upper()} | ${self.final_position_size:,.2f} | R:R {self.expected_risk_reward:.2f}"
+    timestamp: datetime
