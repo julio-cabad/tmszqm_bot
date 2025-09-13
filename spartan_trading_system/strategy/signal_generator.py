@@ -52,7 +52,7 @@ def show_trend_magic_values():
     for symbol in symbols:
         try:
             # Create analyzer
-            analyzer = TechnicalAnalyzer(symbol, "30m")
+            analyzer = TechnicalAnalyzer(symbol, "1m")
             analyzer.fetch_market_data(limit=200)
             
             # Get Trend Magic V3

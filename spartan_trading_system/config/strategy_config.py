@@ -43,7 +43,7 @@ class StrategyConfig:
     squeeze_use_true_range: bool = True
     
     # Timeframe Configuration (Fully Configurable)
-    primary_timeframe: str = "1h"
+    primary_timeframe: str = "1m"
     confirmation_timeframe: str = "30m"
     context_timeframe: str = "4h"
     monitoring_timeframe: str = "15m"  # For real-time monitoring

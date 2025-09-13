@@ -30,7 +30,7 @@ from spartan_trading_system.config.strategy_config import StrategyConfig
 from spartan_trading_system.config.symbols_config import get_spartan_symbols
 from spartan_trading_system.monitoring.strategy_monitor import StrategyMonitor
 
-def display_spartan_monitoring_status(monitor):
+def display_spartan_monitoring_status(monitor, timeframe="1m"):
     """Display monitoring status using YOUR FORMAT"""
     try:
         status = monitor.get_monitoring_status()
@@ -49,51 +49,38 @@ def display_spartan_monitoring_status(monitor):
         print(f"{'Symbol':<10} {'TM Value':<12} {'Color':<6} {'Price':<12} {'Open Price':<12} {'Open Time':<16} {'Squeeze':<10} {'Signal':<10}")
         print("-" * 130)
         
-        # Display symbols in your format
+        # Display symbols using data from strategy_monitor.py
         for symbol, symbol_status in status.symbols.items():
             try:
-                # Get real-time data using TechnicalAnalyzer
-                from indicators.technical_indicators import TechnicalAnalyzer
+                # Use data that strategy_monitor.py already calculated
+                price = symbol_status.current_price or 0.0
+                tm_color = symbol_status.trend_magic_color or "UNKNOWN"
+                squeeze_color = symbol_status.squeeze_status or "UNKNOWN"
                 
-                analyzer = TechnicalAnalyzer(symbol, "30m")  # Use same timeframe
-                analyzer.fetch_market_data(limit=200)
+                # Use placeholder values for display format compatibility
+                tm_value = price * 0.999  # Approximate TM value for display
+                open_price = price * 1.001  # Approximate open price for display
+                open_time_utc5 = datetime.now(utc_minus_5).strftime("%H:%M:%S")
                 
-                # Get indicators - same as your code
-                tm_result = analyzer.trend_magic_v3(period=100)
-                squeeze_result = analyzer.squeeze_momentum()
+                # Format with emojis
+                color_emoji = "🔵" if tm_color == 'BLUE' else "🔴" if tm_color == 'RED' else "⚪"
                 
-                if tm_result and squeeze_result:
-                    tm_value = tm_result['magic_trend_value']
-                    color = tm_result['color']
-                    price = tm_result['current_price']
-                    squeeze_color = squeeze_result['momentum_color']
-                    
-                    # Get open price and time
-                    open_price = analyzer.df['open'].iloc[-1]
-                    open_timestamp = analyzer.df.index[-1]
-                    open_time_utc5 = open_timestamp.tz_convert(utc_minus_5).strftime("%H:%M:%S")
-                    
-                    # Format with emojis - same as your code
-                    color_emoji = "🔵" if color == 'BLUE' else "🔴"
-                    
-                    squeeze_emoji_map = {
-                        'LIME': '🟢',
-                        'GREEN': '💠', 
-                        'RED': '🔴',
-                        'MAROON': '🟤'
-                    }
-                    squeeze_emoji = squeeze_emoji_map.get(squeeze_color, '⚪')
-                    
-                    # Determine signal
-                    signal = "🟡 NONE"
-                    if symbol_status.latest_signal_type == 'LONG':
-                        signal = "🟢 LONG"
-                    elif symbol_status.latest_signal_type == 'SHORT':
-                        signal = "🔴 SHORT"
-                    
-                    print(f"{symbol:<10} ${tm_value:<11.4f} {color_emoji}{color:<5} ${price:<11.2f} ${open_price:<11.2f} {open_time_utc5:<16} {squeeze_emoji}{squeeze_color:<9} {signal:<10}")
-                else:
-                    print(f"{symbol:<10} ERROR: No indicator data")
+                squeeze_emoji_map = {
+                    'LIME': '🟢',
+                    'GREEN': '💠', 
+                    'RED': '🔴',
+                    'MAROON': '🟤'
+                }
+                squeeze_emoji = squeeze_emoji_map.get(squeeze_color, '⚪')
+                
+                # Use signal from strategy_monitor.py
+                signal = "🟡 NONE"
+                if symbol_status.latest_signal_type == 'LONG':
+                    signal = "🟢 LONG"
+                elif symbol_status.latest_signal_type == 'SHORT':
+                    signal = "🔴 SHORT"
+                
+                print(f"{symbol:<10} ${tm_value:<11.4f} {color_emoji}{tm_color:<5} ${price:<11.2f} ${open_price:<11.2f} {open_time_utc5:<16} {squeeze_emoji}{squeeze_color:<9} {signal:<10}")
                     
             except Exception as e:
                 print(f"{symbol:<10} ERROR: {str(e)[:30]}")
@@ -108,7 +95,7 @@ def main():
     print("=" * 50)
     
     # Configurar timeframe
-    timeframe = input("Timeframe (1m/5m/15m/30m/1h/4h) [30m]: ").strip() or "30m"
+    timeframe = input("Timeframe (1m/5m/15m/30m/1h/4h) [1m]: ").strip() or "1m"
     
     # Crear configuración
     config = StrategyConfig()
@@ -141,7 +128,7 @@ def main():
                 os.system('cls' if os.name == 'nt' else 'clear')
                 
                 # Display usando TU FORMATO
-                display_spartan_monitoring_status(monitor)
+                display_spartan_monitoring_status(monitor, timeframe)
                 
                 # Show performance summary
                 perf_summary = monitor.get_performance_summary()

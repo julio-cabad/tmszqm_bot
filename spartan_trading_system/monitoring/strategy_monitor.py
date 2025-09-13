@@ -369,24 +369,28 @@ class StrategyMonitor:
                     latest_candle = data.candles[-1]
                     symbol_status.current_price = latest_candle.close
                     
-                    # Get indicator analysis for this timeframe
+                    # Get indicator analysis using TechnicalAnalyzer (same as signal_generator.py)
                     if timeframe == timeframes[0]:  # Primary timeframe
                         try:
-                            # Get indicator results using symbol (not data.candles)
-                            trend_magic_result = self.indicator_engine.calculate_trend_magic(symbol, timeframe)
-                            squeeze_result = self.indicator_engine.calculate_squeeze_momentum(symbol, timeframe)
+                            from indicators.technical_indicators import TechnicalAnalyzer
                             
-                            if trend_magic_result and squeeze_result:
+                            analyzer = TechnicalAnalyzer(symbol, "1m")
+                            analyzer.fetch_market_data(limit=200)
+                            
+                            # Get indicators - same as signal_generator.py
+                            tm_result = analyzer.trend_magic_v3(period=100)
+                            squeeze_result = analyzer.squeeze_momentum()
+                            
+                            if tm_result and squeeze_result:
                                 # Store indicator data in symbol status
-                                symbol_status.trend_magic_color = trend_magic_result.color
-                                symbol_status.squeeze_status = 'ON' if squeeze_result.squeeze_on else 'OFF'
-                                symbol_status.momentum_direction = 'UP' if squeeze_result.momentum_value > 0 else 'DOWN'
+                                symbol_status.trend_magic_color = tm_result['color']
+                                symbol_status.squeeze_status = squeeze_result['momentum_color']
+                                symbol_status.current_price = tm_result['current_price']
                                 
-                                self.logger.debug(f"📊 {symbol}: TM={symbol_status.trend_magic_color}, SQ={symbol_status.squeeze_status}, MOM={symbol_status.momentum_direction}")
+                                self.logger.debug(f"📊 {symbol}: TM={symbol_status.trend_magic_color}, SQ={symbol_status.squeeze_status}, Price=${symbol_status.current_price}")
                         except Exception as e:
                             self.logger.error(f"💀 Could not get indicator analysis for {symbol}: {str(e)}")
                             # Don't set default values - let them remain None so we know there's an issue
-                            # This will show as UNKNOWN in the display, which is more honest
             
             if not market_data:
                 raise Exception(f"No market data available for {symbol}")
@@ -405,43 +409,36 @@ class StrategyMonitor:
                 current_price = latest_candle.close
                 open_price = latest_candle.open
                 
-                # Use TechnicalAnalyzer directly - same as your signal_generator.py
+                # Use data already calculated above
                 try:
-                    from indicators.technical_indicators import TechnicalAnalyzer
+                    # Get the data we already calculated
+                    tm_color = symbol_status.trend_magic_color
+                    squeeze_color = symbol_status.squeeze_status
+                    current_price = symbol_status.current_price
                     
-                    analyzer = TechnicalAnalyzer(symbol, primary_timeframe)
-                    analyzer.fetch_market_data(limit=200)
-                    
-                    # Get Trend Magic V3 - same as your code
-                    tm_result = analyzer.trend_magic_v3(period=100)
-                    squeeze_result = analyzer.squeeze_momentum()
-                    
-                    if tm_result and squeeze_result:
-                        tm_value = tm_result['magic_trend_value']
-                        tm_color = tm_result['color']
-                        current_price = tm_result['current_price']
-                        squeeze_color = squeeze_result['momentum_color']
+                    if tm_color and squeeze_color and current_price:
+                        # Get TM value and open price for signal detection
+                        from indicators.technical_indicators import TechnicalAnalyzer
+                        analyzer = TechnicalAnalyzer(symbol, "1m")
+                        analyzer.fetch_market_data(limit=200)
+                        tm_result = analyzer.trend_magic_v3(period=100)
                         
-                        # Get open price - same as your code
-                        open_price = analyzer.df['open'].iloc[-1]
-                        
-                        # Update symbol status with real data
-                        symbol_status.current_price = current_price
-                        symbol_status.trend_magic_color = tm_color
-                        symbol_status.squeeze_status = squeeze_color
-                        
-                        # EXACT CONDITIONS FROM signal_generator.py
-                        signal_detected = None
-                        
-                        # BUY CONDITION (LONG)
-                        if (open_price < tm_value and current_price > tm_value and 
-                            tm_color == 'BLUE' and squeeze_color in ['MAROON', 'LIME']):
-                            signal_detected = 'LONG'
+                        if tm_result:
+                            tm_value = tm_result['magic_trend_value']
+                            open_price = analyzer.df['open'].iloc[-1]
                             
-                        # SELL CONDITION (SHORT)
-                        elif (open_price > tm_value and current_price < tm_value and 
-                              tm_color == 'RED' and squeeze_color in ['GREEN', 'RED']):
-                            signal_detected = 'SHORT'
+                            # EXACT CONDITIONS FROM signal_generator.py
+                            signal_detected = None
+                            
+                            # BUY CONDITION (LONG)
+                            if (open_price < tm_value and current_price > tm_value and 
+                                tm_color == 'BLUE' and squeeze_color in ['MAROON', 'LIME']):
+                                signal_detected = 'LONG'
+                                
+                            # SELL CONDITION (SHORT)
+                            elif (open_price > tm_value and current_price < tm_value and 
+                                  tm_color == 'RED' and squeeze_color in ['GREEN', 'RED']):
+                                signal_detected = 'SHORT'
                         
                         # Process detected signal
                         if signal_detected:
