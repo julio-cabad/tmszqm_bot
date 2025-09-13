@@ -60,6 +60,10 @@ class MonitoringDisplay:
         print("├─────────┼──────────┼─────────┼──────────┼─────────────┼─────────┼──────────────────┤")
         
         for symbol, symbol_status in status.symbols.items():
+            # Skip problematic symbols that were removed from config
+            if symbol in ['MATICUSDT', 'FTMUSDT']:
+                continue
+                
             # Get indicator data from the monitor
             indicator_data = self._get_indicator_data(monitor, symbol)
             
@@ -230,7 +234,7 @@ class MonitoringDisplay:
         print("-" * 70)
         
         active_symbols = [symbol for symbol, symbol_status in status.symbols.items() 
-                         if symbol_status.state.value == 'active'][:5]  # Show top 5
+                         if symbol_status.state.value == 'active' and symbol not in ['MATICUSDT', 'FTMUSDT']][:5]  # Show top 5
         
         for symbol in active_symbols:
             symbol_status = status.symbols[symbol]
