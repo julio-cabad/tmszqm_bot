@@ -19,6 +19,8 @@ from ..data.data_models import DataRequest
 from ..indicators.indicator_engine import IndicatorEngine
 from ..strategy.signal_generator import SignalGenerator
 from ..risk.risk_manager import RiskManager
+from ..trading.order_manager import OrderManager
+from ..simulation.pnl_simulator import PnLSimulator
 from .alert_manager import AlertManager
 from .performance_tracker import PerformanceTracker
 from .monitoring_models import (
@@ -54,6 +56,8 @@ class StrategyMonitor:
         self.indicator_engine = IndicatorEngine(config)
         self.signal_generator = SignalGenerator(config, self.indicator_engine)
         self.risk_manager = RiskManager(config)
+        self.order_manager = OrderManager(config)
+        self.pnl_simulator = PnLSimulator()
         self.alert_manager = AlertManager(config)
         self.performance_tracker = PerformanceTracker(config)
         
@@ -308,6 +312,9 @@ class StrategyMonitor:
                         self.logger.error(f"💀 Symbol processing failed for {symbol}: {str(e)}")
                         self._handle_symbol_error(symbol, str(e))
                 
+                # Update PnL simulator with current prices
+                self._update_pnl_simulator()
+                
                 # Update monitoring statistics
                 self._update_monitoring_stats()
                 
@@ -374,18 +381,41 @@ class StrategyMonitor:
                         try:
                             from indicators.technical_indicators import TechnicalAnalyzer
                             
-                            analyzer = TechnicalAnalyzer(symbol, "1m")
+                            self.logger.debug(f"🔍 {symbol}: Creating TechnicalAnalyzer")
+                            analyzer = TechnicalAnalyzer(symbol, timeframe)
                             analyzer.fetch_market_data(limit=200)
                             
+                            self.logger.debug(f"🔍 {symbol}: Calculating indicators")
                             # Get indicators - same as signal_generator.py
                             tm_result = analyzer.trend_magic_v3(period=100)
                             squeeze_result = analyzer.squeeze_momentum()
+                            
+                            self.logger.debug(f"🔍 {symbol}: TM result: {tm_result is not None}, Squeeze result: {squeeze_result is not None}")
                             
                             if tm_result and squeeze_result:
                                 # Store indicator data in symbol status
                                 symbol_status.trend_magic_color = tm_result['color']
                                 symbol_status.squeeze_status = squeeze_result['momentum_color']
                                 symbol_status.current_price = tm_result['current_price']
+                                
+                                # Check if existing signal is still valid
+                                if symbol_status.latest_signal_type:
+                                    signal_still_valid = False
+                                    
+                                    if symbol_status.latest_signal_type == 'LONG':
+                                        # LONG requires: BLUE + (MAROON or LIME)
+                                        if tm_result['color'] == 'BLUE' and squeeze_result['momentum_color'] in ['MAROON', 'LIME']:
+                                            signal_still_valid = True
+                                    elif symbol_status.latest_signal_type == 'SHORT':
+                                        # SHORT requires: RED + (GREEN or RED)
+                                        if tm_result['color'] == 'RED' and squeeze_result['momentum_color'] in ['GREEN', 'RED']:
+                                            signal_still_valid = True
+                                    
+                                    # Clear signal if no longer valid
+                                    if not signal_still_valid:
+                                        symbol_status.latest_signal_type = None
+                                        symbol_status.latest_signal_time = None
+                                        self.logger.info(f"🔄 {symbol}: Signal cleared - conditions changed")
                                 
                                 self.logger.debug(f"📊 {symbol}: TM={symbol_status.trend_magic_color}, SQ={symbol_status.squeeze_status}, Price=${symbol_status.current_price}")
                         except Exception as e:
@@ -419,7 +449,7 @@ class StrategyMonitor:
                     if tm_color and squeeze_color and current_price:
                         # Get TM value and open price for signal detection
                         from indicators.technical_indicators import TechnicalAnalyzer
-                        analyzer = TechnicalAnalyzer(symbol, "1m")
+                        analyzer = TechnicalAnalyzer(symbol, primary_timeframe)
                         analyzer.fetch_market_data(limit=200)
                         tm_result = analyzer.trend_magic_v3(period=100)
                         
@@ -450,9 +480,38 @@ class StrategyMonitor:
                                 symbol_status.latest_signal_strength = 1.0  # High confidence for exact matches
                                 symbol_status.latest_signal_time = datetime.now()
                                 
-                                # Send system alert (using existing alert manager)
+                                # Generate order suggestion with timeframe
+                                order_suggestion = self.order_manager.generate_order_suggestion(
+                                    symbol, signal_detected, current_price, tm_value, primary_timeframe
+                                )
+                                
+                                # Open position in simulator if suggestion was created and we can open more positions
+                                if order_suggestion and self.pnl_simulator.can_open_position():
+                                    position_opened = self.pnl_simulator.open_position(
+                                        symbol=symbol,
+                                        side=signal_detected,
+                                        entry_price=order_suggestion.price,
+                                        quantity=order_suggestion.quantity,
+                                        stop_loss=order_suggestion.stop_loss,
+                                        take_profit=order_suggestion.take_profit
+                                    )
+                                    
+                                    if position_opened:
+                                        # Clear the order suggestion since we "executed" it
+                                        self.order_manager.clear_suggestion(symbol)
+                                
+                                # Send system alert with symbol and time
                                 from .monitoring_models import AlertType, AlertPriority
-                                alert_message = f"{signal_detected} signal detected: Price ${current_price:.4f} | TM ${tm_value:.4f}"
+                                signal_time = datetime.now().strftime('%H:%M:%S')
+                                
+                                if order_suggestion:
+                                    if self.pnl_simulator.can_open_position():
+                                        alert_message = f"{symbol}: {signal_detected} signal at {signal_time} - POSITION OPENED"
+                                    else:
+                                        alert_message = f"{symbol}: {signal_detected} signal at {signal_time} - MAX POSITIONS REACHED"
+                                else:
+                                    alert_message = f"{symbol}: {signal_detected} signal at {signal_time} - Price ${current_price:.4f} | TM ${tm_value:.4f}"
+                                
                                 self.alert_manager.send_system_alert(
                                     alert_message,
                                     alert_type=AlertType.SUPER_SIGNAL,
@@ -510,6 +569,10 @@ class StrategyMonitor:
                 symbol_status.last_error = error_message
                 symbol_status.last_error_time = datetime.now()
             
+            # Detailed error logging
+            error_time = datetime.now().strftime('%H:%M:%S')
+            self.logger.error(f"💀 {symbol} Error #{self.error_counts[symbol]} at {error_time}: {error_message}")
+            
             # Check if symbol should be paused
             if self.error_counts[symbol] >= self.max_errors_per_symbol:
                 if symbol_status:
@@ -517,10 +580,10 @@ class StrategyMonitor:
                 
                 self.logger.error(f"💀 Symbol {symbol} paused due to excessive errors: {error_message}")
                 
-                # Send error alert
+                # Send error alert with symbol and time
                 from .monitoring_models import AlertType, AlertPriority
                 self.alert_manager.send_system_alert(
-                    f"Symbol {symbol} paused due to errors: {error_message}",
+                    f"{symbol}: PAUSED at {error_time} - {error_message[:50]}",
                     alert_type=AlertType.SYSTEM_ERROR,
                     priority=AlertPriority.HIGH
                 )
@@ -529,6 +592,23 @@ class StrategyMonitor:
         
         except Exception as e:
             self.logger.error(f"💀 Error handling failed for {symbol}: {str(e)}")
+    
+    def _update_pnl_simulator(self):
+        """Update PnL simulator with current market prices"""
+        try:
+            # Collect current prices for all symbols with open positions
+            market_data = {}
+            for symbol in self.pnl_simulator.open_positions.keys():
+                symbol_status = self.monitoring_status.symbols.get(symbol)
+                if symbol_status and symbol_status.current_price:
+                    market_data[symbol] = symbol_status.current_price
+            
+            # Update simulator
+            if market_data:
+                self.pnl_simulator.update_positions(market_data)
+                
+        except Exception as e:
+            self.logger.error(f"💀 Failed to update PnL simulator: {str(e)}")
     
     def _update_monitoring_stats(self):
         """Update overall monitoring statistics"""

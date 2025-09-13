@@ -44,9 +44,14 @@ SYMBOLS: List[str] = [
     'GALAUSDT'   # Gala - Gaming Ecosystem
 ]
 
- # Comisiones de Binance (incluir en cálculos de rentabilidad)
+# Comisiones de Binance (incluir en cálculos de rentabilidad)
 maker_fee: float = 0.0004  # 0.04% - cuando agregas liquidez
 taker_fee: float = 0.0005  # 0.05% - cuando tomas liquidez
+
+# PnL Simulator Configuration
+MAX_OPEN_POSITIONS: int = 5  # Máximo número de posiciones simultáneas
+INITIAL_BALANCE: float = 1000.0  # Balance inicial para simulación
+AUTO_CLOSE_ON_TARGET: bool = True  # Cerrar automáticamente en take profit/stop loss
 
 time_frame: str = '4h'
 

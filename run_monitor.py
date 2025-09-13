@@ -23,8 +23,9 @@ logging.getLogger("TechnicalAnalyzer").setLevel(logging.CRITICAL)
 logging.getLogger("MarketDataProvider").setLevel(logging.CRITICAL)
 logging.getLogger("IndicatorEngine").setLevel(logging.CRITICAL)
 logging.getLogger("RobotBinance").setLevel(logging.CRITICAL)
-logging.getLogger("StrategyMonitor").setLevel(logging.CRITICAL)
+logging.getLogger("StrategyMonitor").setLevel(logging.CRITICAL)  # Disable debug logs
 logging.getLogger("AlertManager").setLevel(logging.CRITICAL)  # Suppress alert logs during display
+logging.getLogger("PnLSimulator").setLevel(logging.DEBUG)  # Enable PnL simulator debug logs
 
 from spartan_trading_system.config.strategy_config import StrategyConfig
 from spartan_trading_system.config.symbols_config import get_spartan_symbols
@@ -134,12 +135,61 @@ def main():
                 perf_summary = monitor.get_performance_summary()
                 print(f"\n📈 Performance: CPU {perf_summary.get('system_performance', {}).get('current_cpu_percent', 0):.1f}% | Memory {perf_summary.get('system_performance', {}).get('current_memory_mb', 0):.1f}MB | API {perf_summary.get('system_performance', {}).get('api_calls_per_minute', 0)}/min")
                 
+                # Show PnL Simulator Status
+                try:
+                    # Get current market data for PnL calculation
+                    market_data = {}
+                    status = monitor.get_monitoring_status()
+                    for symbol, symbol_status in status.symbols.items():
+                        if symbol_status.current_price:
+                            market_data[symbol] = symbol_status.current_price
+                    
+                    # Get simulator stats
+                    perf_stats = monitor.pnl_simulator.get_performance_stats()
+                    open_positions = monitor.pnl_simulator.get_open_positions_summary(market_data)
+                    total_balance = monitor.pnl_simulator.get_total_balance(market_data)
+                    
+                    # Display PnL Summary
+                    balance_change = total_balance - perf_stats['initial_balance']
+                    balance_pct = (balance_change / perf_stats['initial_balance']) * 100
+                    balance_emoji = "💚" if balance_change >= 0 else "💔"
+                    
+                    print(f"\n{balance_emoji} PnL Simulator - Balance: ${total_balance:.2f} ({balance_pct:+.2f}%)")
+                    
+                    # Show open positions
+                    if open_positions:
+                        print(f"📊 Open Positions ({len(open_positions)}/{perf_stats['max_positions']}):")
+                        for pos in open_positions:
+                            side_emoji = "🟢" if pos['side'] == 'LONG' else "🔴"
+                            pnl_emoji = "💚" if pos['current_pnl'] >= 0 else "💔"
+                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.2f} ({pos['pnl_pct']:+.1f}%)")
+                    
+                    # Show performance stats if we have trades
+                    if perf_stats['total_trades'] > 0:
+                        print(f"📈 Stats: {perf_stats['total_trades']} trades | {perf_stats['win_rate']:.0f}% win rate | ${perf_stats['total_commissions']:.2f} fees")
+                    
+                except Exception as e:
+                    print(f"💀 PnL Display Error: {str(e)}")  # Show the error temporarily
+                
+                # Show trading suggestions (if any remaining)
+                try:
+                    suggestions = monitor.order_manager.get_active_suggestions()
+                    if suggestions:
+                        print(f"\n💡 Pending Suggestions ({len(suggestions)}):")
+                        print("=" * 60)
+                        for symbol, suggestion in suggestions.items():
+                            formatted_suggestion = monitor.order_manager.format_order_suggestion(suggestion)
+                            print(formatted_suggestion)
+                            print("-" * 60)
+                except Exception:
+                    pass  # Don't let suggestion display errors break the main loop
+                
                 # Show recent alerts (last 3) in a clean format
                 try:
-                    recent_alerts = monitor.alert_manager.get_recent_alerts(3)
+                    recent_alerts = monitor.alert_manager.get_recent_alerts(10)
                     if recent_alerts:
                         print(f"\n🔔 Alertas Recientes:")
-                        for alert in recent_alerts[-3:]:  # Last 3 alerts
+                        for alert in recent_alerts[-10:]:  # Last 10 alerts
                             if isinstance(alert.get('timestamp'), datetime):
                                 timestamp = alert['timestamp'].strftime("%H:%M:%S")
                             else:
