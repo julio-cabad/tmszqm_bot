@@ -114,6 +114,11 @@ class SymbolStatus:
     api_calls_last_minute: int = 0
     rate_limit_reset_time: Optional[datetime] = None
     
+    # Indicator data
+    trend_magic_color: Optional[str] = None
+    squeeze_status: Optional[str] = None
+    momentum_direction: Optional[str] = None
+    
     def is_healthy(self) -> bool:
         """Check if symbol monitoring is healthy"""
         if self.state == SymbolState.ERROR:

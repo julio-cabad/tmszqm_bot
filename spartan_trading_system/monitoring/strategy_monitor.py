@@ -371,6 +371,25 @@ class StrategyMonitor:
                     # Update symbol status with latest price
                     latest_candle = data.candles[-1]
                     symbol_status.current_price = latest_candle.close
+                    
+                    # Get indicator analysis for this timeframe
+                    if timeframe == timeframes[0]:  # Primary timeframe
+                        try:
+                            # Get indicator results using symbol (not data.candles)
+                            trend_magic_result = self.indicator_engine.calculate_trend_magic(symbol, timeframe)
+                            squeeze_result = self.indicator_engine.calculate_squeeze_momentum(symbol, timeframe)
+                            
+                            if trend_magic_result and squeeze_result:
+                                # Store indicator data in symbol status
+                                symbol_status.trend_magic_color = trend_magic_result.color
+                                symbol_status.squeeze_status = 'ON' if squeeze_result.squeeze_on else 'OFF'
+                                symbol_status.momentum_direction = 'UP' if squeeze_result.momentum_value > 0 else 'DOWN'
+                                
+                                self.logger.debug(f"📊 {symbol}: TM={symbol_status.trend_magic_color}, SQ={symbol_status.squeeze_status}, MOM={symbol_status.momentum_direction}")
+                        except Exception as e:
+                            self.logger.error(f"💀 Could not get indicator analysis for {symbol}: {str(e)}")
+                            # Don't set default values - let them remain None so we know there's an issue
+                            # This will show as UNKNOWN in the display, which is more honest
             
             if not market_data:
                 raise Exception(f"No market data available for {symbol}")
@@ -380,7 +399,7 @@ class StrategyMonitor:
             self.performance_tracker.record_api_call(f"klines_{symbol}", api_time)
             
             # Generate signals for primary timeframe
-            primary_timeframe = timeframes[0]
+            primary_timeframe = timeframes[0] if timeframes else '1h'
             if primary_timeframe in market_data:
                 signal_start_time = time.time()
                 

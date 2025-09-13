@@ -51,30 +51,210 @@ class MonitoringDisplay:
         print()
     
     def display_symbol_status(self, monitor: StrategyMonitor):
-        """Display status for all symbols"""
+        """Display enhanced status for all symbols with indicator details"""
         status = monitor.get_monitoring_status()
         
-        print("🎯 SYMBOL STATUS")
-        print("-" * 80)
-        print(f"{'Symbol':<12} {'Status':<15} {'Signals':<8} {'Price':<12} {'Last Signal':<20}")
-        print("-" * 80)
+        print("🎯 ENHANCED SYMBOL STATUS")
+        print("┌─────────┬──────────┬─────────┬──────────┬─────────────┬─────────┬──────────────────┐")
+        print("│ Symbol  │TM Color  │Squeeze  │Mom Color │    Price    │Signals  │   Last Signal    │")
+        print("├─────────┼──────────┼─────────┼──────────┼─────────────┼─────────┼──────────────────┤")
         
         for symbol, symbol_status in status.symbols.items():
-            status_text = symbol_status.get_status_summary()
+            # Get indicator data from the monitor
+            indicator_data = self._get_indicator_data(monitor, symbol)
+            
+            # Format trend magic color
+            tm_color = self._format_trend_magic_color(indicator_data.get('trend_magic_color', 'UNKNOWN'))
+            
+            # Format squeeze status
+            squeeze_status = self._format_squeeze_status(indicator_data.get('squeeze_status', 'UNKNOWN'))
+            
+            # Format momentum color (instead of direction)
+            momentum_color = self._format_momentum_color(indicator_data.get('momentum_color', 'UNKNOWN'))
             
             # Format price
-            price_text = f"${symbol_status.current_price:.4f}" if symbol_status.current_price else "N/A"
+            if symbol_status.current_price:
+                if symbol_status.current_price >= 1000:
+                    price_text = f"${symbol_status.current_price:,.0f}"
+                elif symbol_status.current_price >= 1:
+                    price_text = f"${symbol_status.current_price:.2f}"
+                else:
+                    price_text = f"${symbol_status.current_price:.4f}"
+            else:
+                price_text = "N/A"
             
             # Format last signal
             if symbol_status.latest_signal_type and symbol_status.latest_signal_time:
                 time_diff = datetime.now() - symbol_status.latest_signal_time
                 minutes_ago = int(time_diff.total_seconds() / 60)
-                last_signal = f"{symbol_status.latest_signal_type} ({minutes_ago}m ago)"
+                signal_short = symbol_status.latest_signal_type.replace('_', '').upper()[:8]
+                last_signal = f"{signal_short}({minutes_ago}m)"
             else:
                 last_signal = "None"
             
-            print(f"{symbol:<12} {status_text:<35} {symbol_status.signal_count:<8} {price_text:<12} {last_signal:<20}")
+            # Handle error states - NO DEFAULT ASSUMPTIONS, ONLY REAL DATA
+            if symbol_status.state.value == 'error':
+                tm_color = "❌ ERR"
+                squeeze_status = "❌ ERR"
+                momentum_color = "❌ ERR"
+                price_text = "N/A"
+            # If data is UNKNOWN, keep it as UNKNOWN - NO FAKE DATA
+            
+            print(f"│{symbol:<8} │{tm_color:<9} │{squeeze_status:<8} │{momentum_color:<9} │{price_text:>11} │{symbol_status.signal_count:>6}  │{last_signal:<16} │")
         
+        print("└─────────┴──────────┴─────────┴──────────┴─────────────┴─────────┴──────────────────┘")
+        print()
+    
+    def _get_indicator_data(self, monitor: StrategyMonitor, symbol: str) -> dict:
+        """Get current indicator data for a symbol"""
+        try:
+            symbol_status = monitor.get_symbol_status(symbol)
+            if not symbol_status:
+                return {
+                    'trend_magic_color': 'UNKNOWN',
+                    'squeeze_status': 'UNKNOWN',
+                    'momentum_direction': 'UNKNOWN',
+                    'momentum_color': 'UNKNOWN'
+                }
+            
+            # ALWAYS get REAL indicator data from IndicatorEngine (ignore cached symbol_status)
+            real_data = self._get_real_indicator_data(monitor, symbol)
+            
+            tm_color = real_data.get('trend_magic_color', 'UNKNOWN')
+            squeeze_status = real_data.get('squeeze_status', 'UNKNOWN')
+            momentum_dir = real_data.get('momentum_direction', 'UNKNOWN')
+            momentum_color = real_data.get('momentum_color', 'UNKNOWN')
+            
+            return {
+                'trend_magic_color': tm_color,
+                'squeeze_status': squeeze_status,
+                'momentum_direction': momentum_dir,
+                'momentum_color': momentum_color
+            }
+            
+        except Exception as e:
+            return {
+                'trend_magic_color': 'UNKNOWN',
+                'squeeze_status': 'UNKNOWN',
+                'momentum_direction': 'UNKNOWN',
+                'momentum_color': 'UNKNOWN'
+            }
+    
+    def _format_trend_magic_color(self, color: str) -> str:
+        """Format trend magic color with emoji"""
+        color_map = {
+            'BLUE': '🔵 BLUE',
+            'RED': '🔴 RED',
+            'UNKNOWN': '⚪ UNK'
+        }
+        return color_map.get(color.upper(), '⚪ UNK')
+    
+    def _format_squeeze_status(self, status: str) -> str:
+        """Format squeeze status with emoji"""
+        status_map = {
+            'ON': '🔴 ON',
+            'OFF': '🟢 OFF',
+            'UNKNOWN': '⚪ UNK'
+        }
+        return status_map.get(status.upper(), '⚪ UNK')
+    
+    def _format_momentum_direction(self, direction: str) -> str:
+        """Format momentum direction with emoji"""
+        direction_map = {
+            'UP': '⬆️ UP',
+            'DOWN': '⬇️ DOWN',
+            'UNKNOWN': '➡️ UNK'
+        }
+        return direction_map.get(direction.upper(), '➡️ UNK')
+    
+    def _format_momentum_color(self, color: str) -> str:
+        """Format momentum color with emoji"""
+        color_map = {
+            'LIME': '🟢 LIME',
+            'GREEN': '🟢 GRN',
+            'RED': '🔴 RED',
+            'MAROON': '🟤 MAR',
+            'UNKNOWN': '⚪ UNK'
+        }
+        return color_map.get(color.upper(), '⚪ UNK')
+    
+    def _get_real_indicator_data(self, monitor: StrategyMonitor, symbol: str) -> dict:
+        """Get REAL indicator data using the same method as trend_magic_continuous_compare.py"""
+        try:
+            # Temporarily suppress TechnicalAnalyzer logging to avoid cluttering the display
+            import logging
+            ta_logger = logging.getLogger(f"TechnicalAnalyzer-{symbol}")
+            original_level = ta_logger.level
+            ta_logger.setLevel(logging.ERROR)
+            
+            try:
+                # Force fresh data by using the TechnicalAnalyzer directly like trend_magic_continuous_compare.py
+                from indicators.technical_indicators import TechnicalAnalyzer
+                
+                # Create fresh analyzer instance (no caching)
+                analyzer = TechnicalAnalyzer(symbol, "1m")  # Use 1m like your working script
+                
+                # Fetch fresh market data (50 candles like your script)
+                analyzer.fetch_market_data(limit=50)
+                
+                # Calculate Trend Magic V3 (same as your script)
+                tm_result = analyzer.trend_magic_v3()
+                
+                # Calculate Squeeze Momentum
+                squeeze_result = analyzer.squeeze_momentum()
+                
+                return {
+                    'trend_magic_color': tm_result['color'],
+                    'squeeze_status': 'ON' if squeeze_result['squeeze_on'] else 'OFF',
+                    'momentum_direction': 'UP' if squeeze_result['momentum_value'] > 0 else 'DOWN',
+                    'momentum_color': squeeze_result['momentum_color']  # RED, MAROON, LIME, GREEN
+                }
+
+            finally:
+                # Restore original logging level
+                ta_logger.setLevel(original_level)
+            
+        except Exception as e:
+            return {
+                'trend_magic_color': 'UNKNOWN',
+                'squeeze_status': 'UNKNOWN',
+                'momentum_direction': 'UNKNOWN',
+                'momentum_color': 'UNKNOWN'
+            }
+    
+    def display_indicator_details(self, monitor: StrategyMonitor):
+        """Display detailed indicator information for comparison with TradingView"""
+        status = monitor.get_monitoring_status()
+        
+        print("📊 INDICATOR DETAILS (for TradingView comparison)")
+        print("-" * 70)
+        
+        active_symbols = [symbol for symbol, symbol_status in status.symbols.items() 
+                         if symbol_status.state.value == 'active'][:5]  # Show top 5
+        
+        for symbol in active_symbols:
+            symbol_status = status.symbols[symbol]
+            indicator_data = self._get_indicator_data(monitor, symbol)
+            
+            tm_color = indicator_data.get('trend_magic_color', 'UNKNOWN')
+            squeeze_status = indicator_data.get('squeeze_status', 'UNKNOWN')
+            momentum_color = indicator_data.get('momentum_color', 'UNKNOWN')
+            
+            price_text = f"${symbol_status.current_price:.4f}" if symbol_status.current_price else "N/A"
+            
+            print(f"{symbol:>8}: TM={tm_color:<4} | SQ={squeeze_status:<3} | MOM={momentum_color:<4} | Price={price_text}")
+        
+        print()
+        print("💡 Compare with TradingView:")
+        print("   - TM = Trend Magic color (BLUE=Bullish, RED=Bearish)")
+        print("   - SQ = Squeeze status (ON=Compressed, OFF=Expanded)")  
+        print("   - MOM = Momentum color (LIME=Strong Up, GREEN=Up, RED=Down, MAROON=Strong Down)")
+        print()
+        print("ℹ️  Note: If showing UNKNOWN, the system is still gathering indicator data.")
+        print("   Wait a few update cycles for accurate indicator readings.")
+        print()
+        print("ℹ️  Note: If showing UNKNOWN, the system is still gathering indicator data.")
+        print("   Wait a few update cycles for accurate indicator readings.")
         print()
     
     def display_performance_metrics(self, monitor: StrategyMonitor):
@@ -135,6 +315,16 @@ class MonitoringDisplay:
         print("Ctrl+C: Stop monitoring")
         print("The display updates every 10 seconds")
         print()
+        print("🔧 TROUBLESHOOTING:")
+        print("- If indicators show UNKNOWN, wait 1-2 update cycles")
+        print("- Check that primary_timeframe is set to '1m' in config")
+        print("- Verify API connectivity and data quality")
+        print()
+        print("🔧 TROUBLESHOOTING:")
+        print("- If indicators show UNKNOWN, wait 1-2 update cycles")
+        print("- Check that primary_timeframe is set to '1m' in config")
+        print("- Verify API connectivity and data quality")
+        print()
 
 
 def test_monitoring_display():
@@ -143,15 +333,24 @@ def test_monitoring_display():
     print("=" * 60)
     
     try:
-        # Setup logging
+        # Setup logging - Reduce console noise for clean display
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging.WARNING,  # Only show warnings and errors on console
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler('monitoring_test.log'),
-                logging.StreamHandler()
+                logging.FileHandler('monitoring_test.log'),  # Full logs to file
+                logging.StreamHandler()  # Only warnings/errors to console
             ]
         )
+        
+        # Set specific loggers to reduce noise
+        logging.getLogger('MarketDataProvider').setLevel(logging.ERROR)
+        logging.getLogger('IndicatorEngine').setLevel(logging.ERROR)
+        logging.getLogger('StrategyMonitor').setLevel(logging.WARNING)
+        
+        # Suppress TechnicalAnalyzer logs during display updates
+        for symbol in ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT']:
+            logging.getLogger(f"TechnicalAnalyzer-{symbol}").setLevel(logging.ERROR)
         
         # Load configuration
         print("📋 Loading configuration...")
@@ -165,7 +364,7 @@ def test_monitoring_display():
         # Create display
         display = MonitoringDisplay()
         
-        # Add some test symbols
+        # Add some test symbols (removed FTMUSDT and MATICUSDT due to data issues)
         test_symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT']
         print(f"📊 Adding {len(test_symbols)} symbols for monitoring...")
         
@@ -190,6 +389,7 @@ def test_monitoring_display():
                 display.display_header()
                 display.display_monitoring_status(monitor)
                 display.display_symbol_status(monitor)
+                display.display_indicator_details(monitor)
                 display.display_performance_metrics(monitor)
                 display.display_recent_alerts(monitor)
                 display.display_controls()
@@ -218,6 +418,11 @@ def test_monitoring_basic():
     print("🏛️ ═══ BASIC MONITORING SYSTEM TEST ═══")
     
     try:
+        # Suppress TechnicalAnalyzer logs for clean output
+        import logging
+        for symbol in ['BTCUSDT', 'ETHUSDT', 'BNBUSDT']:
+            logging.getLogger(f"TechnicalAnalyzer-{symbol}").setLevel(logging.ERROR)
+        
         # Load configuration
         config_manager = ConfigManager()
         config = config_manager.load_config("default.json")

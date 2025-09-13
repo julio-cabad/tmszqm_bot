@@ -30,7 +30,7 @@
   "squeeze_kc_length": 20,
   "squeeze_kc_multiplier": 1.5,
   "squeeze_use_true_range": true,
-  "primary_timeframe": "1h",
+  "primary_timeframe": "1m",
   "confirmation_timeframe": "30m",
   "context_timeframe": "4h",
   "monitoring_timeframe": "15m",
