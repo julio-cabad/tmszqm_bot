@@ -54,59 +54,45 @@ class MonitoringDisplay:
         """Display enhanced status for all symbols with indicator details"""
         status = monitor.get_monitoring_status()
         
-        print("🎯 ENHANCED SYMBOL STATUS")
-        print("┌─────────┬──────────┬─────────┬──────────┬─────────────┬─────────┬──────────────────┐")
-        print("│ Symbol  │TM Color  │Squeeze  │Mom Color │    Price    │Signals  │   Last Signal    │")
-        print("├─────────┼──────────┼─────────┼──────────┼─────────────┼─────────┼──────────────────┤")
+        print("🏛️⚔️ SPARTAN CONFLUENCE SIGNALS")
+        print("┌─────────┬─────────┬─────────┬─────────┬──────────┬─────────┬──────────────────────┐")
+        print("│ Symbol  │ 1m TM   │ 15m TM  │ 1h TM   │ Mom 1m   │Signals  │   Confluence Signal  │")
+        print("├─────────┼─────────┼─────────┼─────────┼──────────┼─────────┼──────────────────────┤")
         
         for symbol, symbol_status in status.symbols.items():
             # Skip problematic symbols that were removed from config
-            if symbol in ['MATICUSDT', 'FTMUSDT']:
+            if symbol in ['MATICUSDT', 'FTMUSDT'] or symbol_status.state.value == 'error':
                 continue
                 
-            # Get indicator data from the monitor
-            indicator_data = self._get_indicator_data(monitor, symbol)
+            # Get SPARTAN multi-timeframe data
+            tf_data = self._get_multi_timeframe_data(monitor, symbol)
             
-            # Format trend magic color
-            tm_color = self._format_trend_magic_color(indicator_data.get('trend_magic_color', 'UNKNOWN'))
+            # Format Trend Magic colors for all timeframes
+            tm_1m = self._format_trend_magic_color(tf_data.get('1m', {}).get('trend_magic_color', 'UNKNOWN'))
+            tm_15m = self._format_trend_magic_color(tf_data.get('15m', {}).get('trend_magic_color', 'UNKNOWN'))
+            tm_1h = self._format_trend_magic_color(tf_data.get('1h', {}).get('trend_magic_color', 'UNKNOWN'))
             
-            # Format squeeze status
-            squeeze_status = self._format_squeeze_status(indicator_data.get('squeeze_status', 'UNKNOWN'))
+            # Format momentum color (1m only)
+            momentum_color = self._format_momentum_color(tf_data.get('1m', {}).get('momentum_color', 'UNKNOWN'))
             
-            # Format momentum color (instead of direction)
-            momentum_color = self._format_momentum_color(indicator_data.get('momentum_color', 'UNKNOWN'))
+            # Check SPARTAN confluence
+            confluence_signal = self._check_spartan_confluence(symbol, tf_data)
             
-            # Format price
-            if symbol_status.current_price:
-                if symbol_status.current_price >= 1000:
-                    price_text = f"${symbol_status.current_price:,.0f}"
-                elif symbol_status.current_price >= 1:
-                    price_text = f"${symbol_status.current_price:.2f}"
-                else:
-                    price_text = f"${symbol_status.current_price:.4f}"
-            else:
-                price_text = "N/A"
-            
-            # Format last signal
-            if symbol_status.latest_signal_type and symbol_status.latest_signal_time:
-                time_diff = datetime.now() - symbol_status.latest_signal_time
-                minutes_ago = int(time_diff.total_seconds() / 60)
-                signal_short = symbol_status.latest_signal_type.replace('_', '').upper()[:8]
-                last_signal = f"{signal_short}({minutes_ago}m)"
-            else:
-                last_signal = "None"
-            
-            # Handle error states - NO DEFAULT ASSUMPTIONS, ONLY REAL DATA
+            # Handle error states
             if symbol_status.state.value == 'error':
-                tm_color = "❌ ERR"
-                squeeze_status = "❌ ERR"
+                tm_1m = tm_15m = tm_1h = "❌ ERR"
                 momentum_color = "❌ ERR"
-                price_text = "N/A"
-            # If data is UNKNOWN, keep it as UNKNOWN - NO FAKE DATA
+                confluence_signal = "❌ ERROR"
             
-            print(f"│{symbol:<8} │{tm_color:<9} │{squeeze_status:<8} │{momentum_color:<9} │{price_text:>11} │{symbol_status.signal_count:>6}  │{last_signal:<16} │")
+            # Shorten TM colors for table
+            tm_1m_short = tm_1m.replace(' ', '')[:7]
+            tm_15m_short = tm_15m.replace(' ', '')[:7]
+            tm_1h_short = tm_1h.replace(' ', '')[:7]
+            mom_short = momentum_color.replace(' ', '')[:8]
+            
+            print(f"│{symbol:<8} │{tm_1m_short:<7} │{tm_15m_short:<7} │{tm_1h_short:<7} │{mom_short:<8} │{symbol_status.signal_count:>6}  │{confluence_signal:<20} │")
         
-        print("└─────────┴──────────┴─────────┴──────────┴─────────────┴─────────┴──────────────────┘")
+        print("└─────────┴─────────┴─────────┴─────────┴──────────┴─────────┴──────────────────────┘")
         print()
     
     def _get_indicator_data(self, monitor: StrategyMonitor, symbol: str) -> dict:
@@ -182,6 +168,212 @@ class MonitoringDisplay:
         }
         return color_map.get(color.upper(), '⚪ UNK')
     
+    def _get_signal_direction(self, tm_color: str) -> str:
+        """Determine signal direction based on Trend Magic color"""
+        if tm_color == 'BLUE':
+            return 'LONG'
+        elif tm_color == 'RED':
+            return 'SHORT'
+        else:
+            return 'UNK'
+    
+    def _is_signal_valid(self, signal_type: str, tm_color: str, signal_time) -> bool:
+        """Check if signal is still valid based on current conditions"""
+        if not signal_type or not signal_time:
+            return False
+        
+        # Get signal direction when it was generated
+        # For now, we'll assume signals were generated correctly at the time
+        # In a real implementation, we'd store the original TM color with the signal
+        
+        # Simple validation: if signal is older than 30 minutes, consider it stale
+        from datetime import datetime, timedelta
+        if isinstance(signal_time, str):
+            return True  # Can't parse time, keep signal for now
+        
+        time_diff = datetime.now() - signal_time
+        if time_diff > timedelta(minutes=30):
+            return False  # Signal too old
+        
+        return True  # Signal is recent enough
+    
+    def _format_signal_with_direction(self, signal_type: str, signal_time, tm_color: str) -> str:
+        """Format signal with direction (LONG/SHORT) and time"""
+        if not signal_type:
+            return "None"
+        
+        # Determine direction based on current TM color
+        direction = self._get_signal_direction(tm_color)
+        
+        # Extract time from signal_time
+        if signal_time:
+            if isinstance(signal_time, str):
+                time_str = "0m"  # Default if can't parse
+            else:
+                from datetime import datetime
+                time_diff = datetime.now() - signal_time
+                minutes_ago = int(time_diff.total_seconds() / 60)
+                time_str = f"{minutes_ago}m"
+        else:
+            time_str = "0m"
+        
+        # Format signal type (shorten for display)
+        signal_short = signal_type.replace('_', '').upper()[:8]
+        
+        # Add direction and validation
+        if direction == 'UNK':
+            return f"{signal_short}({time_str})"
+        else:
+            return f"{signal_short} {direction}({time_str})"
+    
+    def _get_multi_timeframe_data(self, monitor: StrategyMonitor, symbol: str) -> dict:
+        """Get Trend Magic data for all 3 timeframes - SPARTAN STYLE"""
+        try:
+            # Suppress logging for clean display
+            import logging
+            ta_logger = logging.getLogger(f"TechnicalAnalyzer-{symbol}")
+            original_level = ta_logger.level
+            ta_logger.setLevel(logging.ERROR)
+            
+            try:
+                from indicators.technical_indicators import TechnicalAnalyzer
+                
+                # Get data for all 3 timeframes
+                timeframes = ["1m", "15m", "1h"]
+                tm_data = {}
+                
+                for tf in timeframes:
+                    analyzer = TechnicalAnalyzer(symbol, tf)
+                    analyzer.fetch_market_data(limit=200)  # More data for CCI 100
+                    
+                    # Get Trend Magic and Squeeze
+                    tm_result = analyzer.trend_magic_v3()
+                    squeeze_result = analyzer.squeeze_momentum()
+                    
+                    tm_data[tf] = {
+                        'trend_magic_color': tm_result['color'],
+                        'momentum_color': squeeze_result['momentum_color'],
+                        'current_price': tm_result['current_price'],
+                        'trend_magic_value': tm_result['magic_trend_value'],  # VALOR DEL TM
+                        'buy_signal': tm_result['buy_signal'],    # CRUCE ALCISTA
+                        'sell_signal': tm_result['sell_signal']   # CRUCE BAJISTA
+                    }
+                
+                return tm_data
+                
+            finally:
+                ta_logger.setLevel(original_level)
+                
+        except Exception as e:
+            print(f"DEBUG: Error getting multi-timeframe data for {symbol}: {str(e)}")
+            return {}
+    
+    def _check_price_crossing(self, symbol: str, tf_data: dict) -> dict:
+        """Check if price is crossing Trend Magic - SIMPLE SPARTAN LOGIC"""
+        try:
+            from indicators.technical_indicators import TechnicalAnalyzer
+            
+            # Get fresh 1m data with at least 2 candles
+            analyzer = TechnicalAnalyzer(symbol, "1m")
+            analyzer.fetch_market_data(limit=10)  # Just need recent data
+            
+            if not hasattr(analyzer, 'data') or len(analyzer.data) < 2:
+                return {'buy_cross': False, 'sell_cross': False}
+            
+            # Get Trend Magic for current analysis
+            tm_result = analyzer.trend_magic_v3()
+            current_tm_value = tm_result['magic_trend_value']
+            
+            # Get last 2 prices
+            current_price = analyzer.data['close'].iloc[-1]
+            previous_price = analyzer.data['close'].iloc[-2]
+            
+            # SIMPLE CROSSING LOGIC
+            buy_cross = (previous_price < current_tm_value and current_price > current_tm_value)
+            sell_cross = (previous_price > current_tm_value and current_price < current_tm_value)
+            
+            return {
+                'buy_cross': buy_cross,
+                'sell_cross': sell_cross,
+                'current_price': current_price,
+                'previous_price': previous_price,
+                'tm_value': current_tm_value
+            }
+            
+        except Exception as e:
+            return {'buy_cross': False, 'sell_cross': False}
+    
+    def _check_spartan_confluence(self, symbol: str, tf_data: dict) -> str:
+        """Check for SPARTAN confluence signals - GODS OF WAR LOGIC WITH MANUAL PRICE CROSSING"""
+        if not tf_data or len(tf_data) < 3:
+            return "None"
+        
+        tm_1m = tf_data.get('1m', {}).get('trend_magic_color', 'UNKNOWN')
+        tm_15m = tf_data.get('15m', {}).get('trend_magic_color', 'UNKNOWN')
+        tm_1h = tf_data.get('1h', {}).get('trend_magic_color', 'UNKNOWN')
+        mom_1m = tf_data.get('1m', {}).get('momentum_color', 'UNKNOWN')
+        
+        # GET MANUAL PRICE CROSSING SIGNALS - SPARTAN STYLE
+        crossing_data = self._check_price_crossing(symbol, tf_data)
+        buy_cross = crossing_data.get('buy_cross', False)
+        sell_cross = crossing_data.get('sell_cross', False)
+        
+        # 🔥 SUPER BULLISH CONFLUENCE (MÁXIMA SEGURIDAD) - 1m + 15m ALIGNED
+        if (tm_1m == 'BLUE' and tm_15m == 'BLUE' and 
+            mom_1m in ['MAROON', 'LIME'] and buy_cross):
+            return "🔥 SUPER_BULL LONG"
+        
+        # 🔥 SUPER BEARISH CONFLUENCE (MÁXIMA SEGURIDAD) - 1m + 15m ALIGNED
+        if (tm_1m == 'RED' and tm_15m == 'RED' and
+            mom_1m in ['MAROON', 'RED'] and sell_cross):
+            return "🔥 SUPER_BEAR SHORT"
+        
+        # 📈 BULL SIGNAL (BUENA OPORTUNIDAD) - 15m AGAINST BUT STILL GOOD
+        if (tm_1m == 'BLUE' and tm_15m == 'RED' and 
+            mom_1m in ['MAROON', 'LIME'] and buy_cross):
+            return "📈 BULL LONG"
+        
+        # 📉 BEAR SIGNAL (BUENA OPORTUNIDAD) - 15m AGAINST BUT STILL GOOD  
+        if (tm_1m == 'RED' and tm_15m == 'BLUE' and
+            mom_1m in ['MAROON', 'RED'] and sell_cross):
+            return "📉 BEAR SHORT"
+        
+        # ⚡ TREND CHANGE WITH CROSSING (Early signal with price confirmation)
+        if tm_1m == 'BLUE' and tm_15m == 'BLUE' and buy_cross:
+            return "⚡ TREND_BULL CROSS"
+        if tm_1m == 'RED' and tm_15m == 'RED' and sell_cross:
+            return "⚡ TREND_BEAR CROSS"
+        
+        # 🎯 SUPER SETUP (1m + 15m ALIGNED - WAITING FOR CROSSING)
+        if (tm_1m == 'BLUE' and tm_15m == 'BLUE' and 
+            mom_1m in ['MAROON', 'LIME']):
+            return "🎯 SUPER_BULL SETUP"
+        
+        if (tm_1m == 'RED' and tm_15m == 'RED' and
+            mom_1m in ['MAROON', 'RED']):
+            return "🎯 SUPER_BEAR SETUP"
+        
+        # 📈 BULL SETUP (15m AGAINST - GOOD OPPORTUNITY FORMING)
+        if (tm_1m == 'BLUE' and tm_15m == 'RED' and 
+            mom_1m in ['MAROON', 'LIME']):
+            return "📈 BULL SETUP"
+        
+        if (tm_1m == 'RED' and tm_15m == 'BLUE' and
+            mom_1m in ['MAROON', 'RED']):
+            return "📉 BEAR SETUP"
+        
+        # ⚡ EARLY SIGNALS (Timeframe alignment only)
+        if tm_1m == 'BLUE' and tm_15m == 'BLUE':
+            return "⚡ TREND_BULL"
+        if tm_1m == 'RED' and tm_15m == 'RED':
+            return "⚡ TREND_BEAR"
+        
+        # ⚠️ CONFLICTED (Mixed signals)
+        if tm_1m != tm_15m:
+            return "⚠️ CONFLICTED"
+        
+        return "None"
+    
     def _get_real_indicator_data(self, monitor: StrategyMonitor, symbol: str) -> dict:
         """Get REAL indicator data using the same method as trend_magic_continuous_compare.py"""
         try:
@@ -246,13 +438,29 @@ class MonitoringDisplay:
             
             price_text = f"${symbol_status.current_price:.4f}" if symbol_status.current_price else "N/A"
             
-            print(f"{symbol:>8}: TM={tm_color:<4} | SQ={squeeze_status:<3} | MOM={momentum_color:<4} | Price={price_text}")
+            # Format signal for details view
+            if symbol_status.latest_signal_type:
+                signal_detail = self._format_signal_with_direction(
+                    symbol_status.latest_signal_type,
+                    symbol_status.latest_signal_time,
+                    tm_color
+                )
+            else:
+                signal_detail = "None"
+            
+            print(f"{symbol:>8}: TM={tm_color:<4} | SQ={squeeze_status:<3} | MOM={momentum_color:<4} | Price={price_text} | Signal={signal_detail}")
         
         print()
-        print("💡 Compare with TradingView:")
-        print("   - TM = Trend Magic color (BLUE=Bullish, RED=Bearish)")
-        print("   - SQ = Squeeze status (ON=Compressed, OFF=Expanded)")  
-        print("   - MOM = Momentum color (LIME=Strong Up, GREEN=Up, RED=Down, MAROON=Strong Down)")
+        print("🏛️⚔️ SPARTAN CONFLUENCE LEGEND:")
+        print("   - 1m/15m/1h TM = Trend Magic colors (🔵BLUE=Bull, 🔴RED=Bear)")
+        print("   - Mom 1m = Momentum color (🟢LIME=Strong, 🟤MAR=Weak)")
+        print("   - 🔥 SUPER_BULL/BEAR = 1m+15m aligned + momentum + PRICE CROSSING!")
+        print("   - 📈📉 BULL/BEAR = 1m good + 15m against + momentum + CROSSING!")
+        print("   - 🎯 SUPER_SETUP = 1m+15m aligned + momentum (waiting for cross)")
+        print("   - 📈📉 BULL/BEAR SETUP = 1m good + 15m against (waiting for cross)")
+        print("   - ⚡ TREND_CROSS = Early signals with crossing")
+        print("   - ⚠️ CONFLICTED = Mixed timeframe signals")
+        print("   - 🎯 SPARTAN RULE: 🔥SUPER = MÁXIMA SEGURIDAD! 📈BULL = BUENA OPORTUNIDAD!")
         print()
         print("ℹ️  Note: If showing UNKNOWN, the system is still gathering indicator data.")
         print("   Wait a few update cycles for accurate indicator readings.")
@@ -319,15 +527,15 @@ class MonitoringDisplay:
         print("Ctrl+C: Stop monitoring")
         print("The display updates every 10 seconds")
         print()
-        print("🔧 TROUBLESHOOTING:")
-        print("- If indicators show UNKNOWN, wait 1-2 update cycles")
-        print("- Check that primary_timeframe is set to '1m' in config")
-        print("- Verify API connectivity and data quality")
-        print()
-        print("🔧 TROUBLESHOOTING:")
-        print("- If indicators show UNKNOWN, wait 1-2 update cycles")
-        print("- Check that primary_timeframe is set to '1m' in config")
-        print("- Verify API connectivity and data quality")
+        print("🏛️ SPARTAN BATTLE INSTRUCTIONS:")
+        print("- 🔥 SUPER signals = ENTER IMMEDIATELY! (Price crossed + confluence)")
+        print("- ⚡ CROSS signals = Strong entries (Price crossed + timeframes)")
+        print("- 📈📉 SETUP signals = GET READY! (Confluence formed, wait for cross)")
+        print("- ⚡ TREND signals = Early warnings (No crossing yet)")
+        print("- ⚠️ CONFLICTED = AVOID - mixed signals")
+        print("- 🎯 STRATEGY: Wait for SUPER or CROSS signals for best entries")
+        print("- CCI Period 100 = Quality over quantity")
+        print("- REMEMBER: Price must CROSS Trend Magic for valid entry!")
         print()
 
 
@@ -350,7 +558,8 @@ def test_monitoring_display():
         # Set specific loggers to reduce noise
         logging.getLogger('MarketDataProvider').setLevel(logging.ERROR)
         logging.getLogger('IndicatorEngine').setLevel(logging.ERROR)
-        logging.getLogger('StrategyMonitor').setLevel(logging.WARNING)
+        logging.getLogger('StrategyMonitor').setLevel(logging.ERROR)
+        logging.getLogger('AlertManager').setLevel(logging.ERROR)
         
         # Suppress TechnicalAnalyzer logs during display updates
         for symbol in ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT']:
