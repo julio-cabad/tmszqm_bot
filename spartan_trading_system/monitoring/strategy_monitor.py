@@ -398,35 +398,96 @@ class StrategyMonitor:
             api_time = (time.time() - start_time) * 1000
             self.performance_tracker.record_api_call(f"klines_{symbol}", api_time)
             
-            # Generate signals for primary timeframe
+            # SPARTAN SIGNAL DETECTION - Using exact conditions from signal_generator.py
             primary_timeframe = timeframes[0] if timeframes else '1h'
             if primary_timeframe in market_data:
                 signal_start_time = time.time()
                 
-                signals = self.signal_generator.generate_signals(symbol)
+                # Get current candle data
+                latest_candle = market_data[primary_timeframe].candles[-1]
+                current_price = latest_candle.close
+                open_price = latest_candle.open
                 
-                signal_detection_time = (time.time() - signal_start_time) * 1000
+                # Use TechnicalAnalyzer directly - same as your signal_generator.py
+                try:
+                    from indicators.technical_indicators import TechnicalAnalyzer
+                    
+                    analyzer = TechnicalAnalyzer(symbol, primary_timeframe)
+                    analyzer.fetch_market_data(limit=200)
+                    
+                    # Get Trend Magic V3 - same as your code
+                    tm_result = analyzer.trend_magic_v3(period=100)
+                    squeeze_result = analyzer.squeeze_momentum()
+                    
+                    if tm_result and squeeze_result:
+                        tm_value = tm_result['magic_trend_value']
+                        tm_color = tm_result['color']
+                        current_price = tm_result['current_price']
+                        squeeze_color = squeeze_result['momentum_color']
+                        
+                        # Get open price - same as your code
+                        open_price = analyzer.df['open'].iloc[-1]
+                        
+                        # Update symbol status with real data
+                        symbol_status.current_price = current_price
+                        symbol_status.trend_magic_color = tm_color
+                        symbol_status.squeeze_status = squeeze_color
+                        
+                        # EXACT CONDITIONS FROM signal_generator.py
+                        signal_detected = None
+                        
+                        # BUY CONDITION (LONG)
+                        if (open_price < tm_value and current_price > tm_value and 
+                            tm_color == 'BLUE' and squeeze_color in ['MAROON', 'LIME']):
+                            signal_detected = 'LONG'
+                            
+                        # SELL CONDITION (SHORT)
+                        elif (open_price > tm_value and current_price < tm_value and 
+                              tm_color == 'RED' and squeeze_color in ['GREEN', 'RED']):
+                            signal_detected = 'SHORT'
+                        
+                        # Process detected signal
+                        if signal_detected:
+                                signal_detection_time = (time.time() - signal_start_time) * 1000
+                                
+                                # Update symbol status
+                                symbol_status.signal_count += 1
+                                symbol_status.latest_signal_type = signal_detected
+                                symbol_status.latest_signal_strength = 1.0  # High confidence for exact matches
+                                symbol_status.latest_signal_time = datetime.now()
+                                
+                                # Send system alert (using existing alert manager)
+                                from .monitoring_models import AlertType, AlertPriority
+                                alert_message = f"{signal_detected} signal detected: Price ${current_price:.4f} | TM ${tm_value:.4f}"
+                                self.alert_manager.send_system_alert(
+                                    alert_message,
+                                    alert_type=AlertType.SUPER_SIGNAL,
+                                    priority=AlertPriority.HIGH
+                                )
+                                
+                                # Log signal
+                                self.logger.info(
+                                    f"🎯 {symbol}: {signal_detected} SIGNAL DETECTED "
+                                    f"| Price: ${current_price:.4f} | TM: ${tm_value:.4f} "
+                                    f"| Open: ${open_price:.4f} | Color: {tm_color} | Squeeze: {squeeze_color}"
+                                )
+                                
+                                # Record performance
+                                # Create a mock signal object for performance tracking
+                                class MockSignal:
+                                    def __init__(self, symbol, signal_type, strength, price):
+                                        self.symbol = symbol
+                                        self.signal_type = type('SignalType', (), {signal_type: signal_type})()
+                                        self.signal_type.value = signal_type
+                                        self.strength = strength
+                                        self.current_price = price
+                                        self.timestamp = datetime.now()
+                                
+                                mock_signal = MockSignal(symbol, signal_detected, 1.0, current_price)
+                                self.performance_tracker.record_signal(mock_signal, signal_detection_time)
                 
-                # Process signals
-                for signal in signals:
-                    # Record signal performance
-                    self.performance_tracker.record_signal(signal, signal_detection_time)
-                    
-                    # Update symbol status
-                    symbol_status.signal_count += 1
-                    symbol_status.latest_signal_type = signal.signal_type.value
-                    symbol_status.latest_signal_strength = signal.strength
-                    symbol_status.latest_signal_time = signal.timestamp
-                    
-                    # Send alert
-                    self.alert_manager.send_signal_alert(signal)
-                    
-                    # Log signal
-                    self.logger.info(
-                        f"🎯 {symbol}: {signal.signal_type.value} "
-                        f"| Strength: {signal.strength:.2f} "
-                        f"| Price: ${signal.current_price:.4f}"
-                    )
+                except Exception as e:
+                    self.logger.error(f"💀 Signal detection error for {symbol}: {str(e)}")
             
             # Update performance metrics
             total_time = (time.time() - start_time) * 1000

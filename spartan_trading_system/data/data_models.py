@@ -269,13 +269,13 @@ class DataRequest:
     
     def __post_init__(self):
         if self.end_time is None:
-            self.end_time = datetime.now()
+            # Use current UTC time
+            self.end_time = datetime.utcnow()
         
         if self.start_time is None:
-            # Default to 1000 periods back
-            from datetime import timedelta
-            timeframe_minutes = self._get_timeframe_minutes()
-            self.start_time = self.end_time - timedelta(minutes=timeframe_minutes * self.limit)
+            # Default to requested periods back, but don't send start_time to API
+            # Let Binance use its default behavior with just limit
+            pass
     
     def _get_timeframe_minutes(self) -> int:
         """Get timeframe in minutes"""

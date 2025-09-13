@@ -229,41 +229,77 @@ class MarketDataProvider:
                 return cached_data
             
             # Prepare API parameters
+            # Fix timeframe format for Binance API
+            interval = request.timeframe
+            if interval.isdigit():  # If it's just a number like "30"
+                interval = f"{interval}m"  # Make it "30m"
+            
+            # Ensure correct format for Binance API (30m not 30min)
+            if interval.endswith('min'):
+                interval = interval.replace('min', 'm')
+            
             params = {
                 'symbol': request.symbol,
-                'interval': request.timeframe,
+                'interval': interval,
                 'limit': min(request.limit, 1000)  # Binance max is 1000
             }
             
-            if request.start_time:
-                params['startTime'] = int(request.start_time.timestamp() * 1000)
+            # Don't send timestamps - let Binance use default behavior with just limit
+            # This avoids timestamp calculation errors
             
-            if request.end_time:
-                params['endTime'] = int(request.end_time.timestamp() * 1000)
+            # Use the same method as your working TechnicalAnalyzer
+            self.logger.debug(f"📊 Fetching {request.symbol} {request.timeframe} data using RobotBinance")
             
-            # Make API request
-            self.logger.debug(f"📊 Fetching {request.symbol} {request.timeframe} data from Binance")
-            data = self._make_request("/api/v3/klines", params, weight=1)
-            
-            # Parse candlestick data
-            candles = []
-            for kline in data:
-                candle = CandleData(
-                    symbol=request.symbol,
-                    timestamp=datetime.fromtimestamp(kline[0] / 1000),
-                    timeframe=request.timeframe,
-                    open=float(kline[1]),
-                    high=float(kline[2]),
-                    low=float(kline[3]),
-                    close=float(kline[4]),
-                    volume=float(kline[5]),
-                    quote_volume=float(kline[7]),
-                    trades_count=int(kline[8]),
-                    taker_buy_base_volume=float(kline[9]),
-                    taker_buy_quote_volume=float(kline[10]),
-                    source=DataSource.BINANCE
-                )
-                candles.append(candle)
+            try:
+                from bnb.binance import RobotBinance
+                
+                # Create client same as your TechnicalAnalyzer
+                client = RobotBinance(pair=request.symbol, temporality=interval)
+                df = client.get_historical_data(limit=params['limit'])
+                
+                if df is None or df.empty:
+                    raise Exception(f"No data returned for {request.symbol}")
+                
+                # Convert DataFrame to candles
+                candles = []
+                for index, row in df.iterrows():
+                    candle = CandleData(
+                        symbol=request.symbol,
+                        timestamp=index,
+                        timeframe=request.timeframe,
+                        open=float(row['open']),
+                        high=float(row['high']),
+                        low=float(row['low']),
+                        close=float(row['close']),
+                        volume=float(row['volume'])
+                    )
+                    candles.append(candle)
+                
+            except Exception as e:
+                self.logger.error(f"💀 RobotBinance failed, trying direct API: {str(e)}")
+                
+                # Fallback to direct API
+                data = self._make_request("/api/v3/klines", params, weight=1)
+                
+                # Parse candlestick data
+                candles = []
+                for kline in data:
+                    candle = CandleData(
+                        symbol=request.symbol,
+                        timestamp=datetime.fromtimestamp(kline[0] / 1000),
+                        timeframe=request.timeframe,
+                        open=float(kline[1]),
+                        high=float(kline[2]),
+                        low=float(kline[3]),
+                        close=float(kline[4]),
+                        volume=float(kline[5]),
+                        quote_volume=float(kline[7]),
+                        trades_count=int(kline[8]),
+                        taker_buy_base_volume=float(kline[9]),
+                        taker_buy_quote_volume=float(kline[10]),
+                        source=DataSource.BINANCE
+                    )
+                    candles.append(candle)
             
             # Create MarketData
             market_data = MarketData(

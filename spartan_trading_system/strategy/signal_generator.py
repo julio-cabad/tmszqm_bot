@@ -185,5 +185,31 @@ def run_continuous_monitoring():
     except KeyboardInterrupt:
         print(f"\n🛑 Monitoring stopped by user after {scan_count} scans")
 
+# Clase SignalGenerator para compatibilidad con el sistema profesional
+class SignalGenerator:
+    """
+    Signal Generator class - Wrapper para tu lógica existente
+    """
+    
+    def __init__(self, config, indicator_engine):
+        """Initialize SignalGenerator"""
+        self.config = config
+        self.indicator_engine = indicator_engine
+    
+    def generate_signals(self, symbol):
+        """
+        Generate signals using your exact LONG/SHORT logic
+        
+        Args:
+            symbol: Symbol to analyze
+            
+        Returns:
+            List of signals (empty list for now, signals handled in monitor)
+        """
+        # Tu lógica exacta está implementada directamente en el strategy_monitor.py
+        # Esta función existe solo para compatibilidad
+        return []
+
+
 if __name__ == "__main__":
     run_continuous_monitoring()
