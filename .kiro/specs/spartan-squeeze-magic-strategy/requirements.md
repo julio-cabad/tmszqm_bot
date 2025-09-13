@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The Spartan Squeeze Magic Strategy is a professional trading system that combines the Squeeze Momentum Indicator (LazyBear) with the Trend Magic Indicator to create high-probability trading signals. The system is designed for timeframes of 30 minutes and above, focusing on quality over quantity with comprehensive configurability for all parameters.
+The Spartan Squeeze Magic Strategy is a professional multi-cryptocurrency trading system that combines the Squeeze Momentum Indicator (LazyBear) with the Trend Magic Indicator to create high-probability trading signals. The system monitors multiple cryptocurrency pairs simultaneously to maximize trading opportunities, designed for timeframes of 30 minutes and above, focusing on quality over quantity with comprehensive configurability for all parameters.
 
 ## Requirements
 
@@ -43,17 +43,18 @@ The Spartan Squeeze Magic Strategy is a professional trading system that combine
 5. WHEN indicators conflict THEN the system SHALL generate NO_SIGNAL and wait for alignment
 6. WHEN signal strength is calculated THEN the system SHALL provide probability score (0-100%)
 
-### Requirement 4: Real-Time Monitoring and Alerts
+### Requirement 4: Multi-Cryptocurrency Real-Time Monitoring and Alerts
 
-**User Story:** As a trader, I want real-time monitoring with customizable alerts, so that I can be notified of trading opportunities without constantly watching the screen.
+**User Story:** As a trader, I want real-time monitoring of multiple cryptocurrency pairs with customizable alerts, so that I can maximize trading opportunities across different markets without constantly watching multiple screens.
 
 #### Acceptance Criteria
 
-1. WHEN a high-probability signal occurs THEN the system SHALL send audio alert with signal type
-2. WHEN I configure alert preferences THEN the system SHALL allow customization of sound files and alert types
-3. WHEN monitoring multiple symbols THEN the system SHALL track all configured trading pairs simultaneously
-4. WHEN system detects signal THEN the system SHALL log timestamp, signal type, and probability score
-5. WHEN I request current status THEN the system SHALL display real-time indicator values and signal status
+1. WHEN monitoring multiple cryptocurrencies THEN the system SHALL track 20+ configured trading pairs simultaneously
+2. WHEN a high-probability signal occurs on any pair THEN the system SHALL send audio alert with signal type and symbol
+3. WHEN I configure alert preferences THEN the system SHALL allow customization of sound files and alert types per symbol
+4. WHEN system detects signal THEN the system SHALL log timestamp, symbol, signal type, and probability score
+5. WHEN I request current status THEN the system SHALL display real-time indicator values for all monitored symbols
+6. WHEN I add/remove symbols THEN the system SHALL dynamically update monitoring without restart
 
 ### Requirement 5: Risk Management Integration
 

@@ -69,6 +69,15 @@ class StrategyConfig:
     squeeze_kc_multiplier: float = 1.5
     squeeze_use_true_range: bool = True
     
+    # Multi-Crypto Configuration
+    symbols: List[str] = field(default_factory=lambda: [
+        "BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT",
+        "BNBUSDT", "XRPUSDT", "MATICUSDT", "AVAXUSDT", "LINKUSDT",
+        "ATOMUSDT", "ALGOUSDT", "VETUSDT", "FTMUSDT", "NEARUSDT",
+        "SANDUSDT", "MANAUSDT", "CHZUSDT", "ENJUSDT", "GALAUSDT"
+    ])
+    max_concurrent_symbols: int = 20
+    
     # Timeframe Configuration
     primary_timeframe: str = "1h"
     confirmation_timeframe: str = "30m"
@@ -77,6 +86,7 @@ class StrategyConfig:
     # Risk Management
     risk_percentage: float = 2.0
     max_positions: int = 3
+    max_positions_per_symbol: int = 1
     
     # Alert Settings
     enable_audio_alerts: bool = True
@@ -179,8 +189,12 @@ class StrategyMonitor:
     def __init__(self, config: StrategyConfig, signal_generator: SignalGenerator)
     def start_monitoring(self, symbols: List[str]) -> None
     def stop_monitoring(self) -> None
-    def get_current_status(self) -> MonitoringStatus
+    def add_symbol(self, symbol: str) -> None
+    def remove_symbol(self, symbol: str) -> None
+    def get_current_status(self) -> Dict[str, MonitoringStatus]
+    def get_symbol_status(self, symbol: str) -> MonitoringStatus
     def handle_new_signal(self, signal: TradingSignal) -> None
+    def get_active_symbols(self) -> List[str]
 ```
 
 #### AlertManager Class
