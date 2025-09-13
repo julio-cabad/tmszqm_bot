@@ -305,8 +305,9 @@ class RiskManager:
             Liquidity assessment string
         """
         try:
-            # Major pairs have high liquidity
-            major_pairs = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT"]
+            # Major pairs have high liquidity - using centralized config
+            from ..config.symbols_config import SPARTAN_SYMBOLS
+            major_pairs = SPARTAN_SYMBOLS[:5]  # Top 5 symbols
             
             if symbol in major_pairs:
                 return "HIGH"

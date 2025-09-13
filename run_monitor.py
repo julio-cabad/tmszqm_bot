@@ -24,8 +24,10 @@ logging.getLogger("MarketDataProvider").setLevel(logging.CRITICAL)
 logging.getLogger("IndicatorEngine").setLevel(logging.CRITICAL)
 logging.getLogger("RobotBinance").setLevel(logging.CRITICAL)
 logging.getLogger("StrategyMonitor").setLevel(logging.CRITICAL)
+logging.getLogger("AlertManager").setLevel(logging.CRITICAL)  # Suppress alert logs during display
 
 from spartan_trading_system.config.strategy_config import StrategyConfig
+from spartan_trading_system.config.symbols_config import get_spartan_symbols
 from spartan_trading_system.monitoring.strategy_monitor import StrategyMonitor
 
 def display_spartan_monitoring_status(monitor):
@@ -113,14 +115,8 @@ def main():
     config.timeframes = [timeframe]
     config.primary_timeframe = timeframe
     
-    # Símbolos (los mismos que tu signal_generator.py)
-    config.symbols = [
-        "BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT", 
-        "BNBUSDT", "XRPUSDT", "AVAXUSDT", "LINKUSDT", "ATOMUSDT",
-        "ALGOUSDT", "VETUSDT", "NEARUSDT", "SANDUSDT", "MANAUSDT",
-        "CHZUSDT", "ENJUSDT", "GALAUSDT", "TIAUSDT", "DOGEUSDT",
-        "SUIUSDT", "HBARUSDT"
-    ]
+    # Símbolos centralizados desde symbols_config.py
+    config.symbols = get_spartan_symbols()
     
     print(f"🕐 Timeframe: {timeframe}")
     print(f"📊 Símbolos: {len(config.symbols)}")
@@ -151,9 +147,24 @@ def main():
                 perf_summary = monitor.get_performance_summary()
                 print(f"\n📈 Performance: CPU {perf_summary.get('system_performance', {}).get('current_cpu_percent', 0):.1f}% | Memory {perf_summary.get('system_performance', {}).get('current_memory_mb', 0):.1f}MB | API {perf_summary.get('system_performance', {}).get('api_calls_per_minute', 0)}/min")
                 
+                # Show recent alerts (last 3) in a clean format
+                try:
+                    recent_alerts = monitor.alert_manager.get_recent_alerts(3)
+                    if recent_alerts:
+                        print(f"\n🔔 Alertas Recientes:")
+                        for alert in recent_alerts[-3:]:  # Last 3 alerts
+                            if isinstance(alert.get('timestamp'), datetime):
+                                timestamp = alert['timestamp'].strftime("%H:%M:%S")
+                            else:
+                                timestamp = str(alert.get('timestamp', ''))[:8]
+                            message = alert.get('message', '')[:60]  # Truncate long messages
+                            print(f"   {timestamp} - {message}")
+                except Exception:
+                    pass  # Don't let alert display errors break the main loop
+                
                 # Wait 30 seconds with countdown
                 print(f"\n⏳ Próxima actualización en:")
-                for i in range(30, 0, -1):
+                for i in range(10, 0, -1):
                     print(f"\r⏱️  {i:2d}s", end="", flush=True)
                     time.sleep(1)
                 print()

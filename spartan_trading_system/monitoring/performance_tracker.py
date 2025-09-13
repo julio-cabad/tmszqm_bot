@@ -81,9 +81,8 @@ class PerformanceTracker:
     
     def _initialize_symbol_metrics(self):
         """Initialize performance metrics for configured symbols"""
-        symbols = getattr(self.config, 'symbols', [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT'
-        ])
+        from ..config.symbols_config import get_spartan_symbols
+        symbols = getattr(self.config, 'symbols', get_spartan_symbols())
         
         for symbol in symbols:
             self.symbol_metrics[symbol] = PerformanceMetrics(

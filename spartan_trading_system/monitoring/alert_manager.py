@@ -103,10 +103,8 @@ class AlertManager:
     def _load_default_alert_configs(self):
         """Load default alert configurations for symbols"""
         # Get symbols from config or use defaults
-        symbols = getattr(self.config, 'symbols', [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT',
-            'SOLUSDT', 'DOTUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT'
-        ])
+        from ..config.symbols_config import get_spartan_symbols
+        symbols = getattr(self.config, 'symbols', get_spartan_symbols())
         
         for symbol in symbols:
             self.alert_configs[symbol] = AlertConfig(
@@ -342,65 +340,112 @@ class AlertManager:
             self.logger.error(f"💀 Failed to play system sound: {str(e)}")
     
     def _play_sound_file(self, filename: str):
-        """Play a sound file"""
+        """Play a sound file or system sound"""
         try:
             filepath = os.path.join(self.sound_files_path, filename)
             
-            if not os.path.exists(filepath):
-                self.logger.warning(f"⚠️ Sound file not found: {filepath}")
+            # Try to play custom sound file first
+            if os.path.exists(filepath):
+                sound = pygame.mixer.Sound(filepath)
+                sound.set_volume(self.sound_volume)
+                sound.play()
                 return
             
-            sound = pygame.mixer.Sound(filepath)
-            sound.set_volume(self.sound_volume)
-            sound.play()
+            # Fallback to system sound on macOS
+            if os.name == 'posix' and os.uname().sysname == 'Darwin':
+                self._play_system_beep(filename)
+            else:
+                self.logger.debug(f"⚠️ Sound file not found: {filepath}")
+                
+        except Exception as e:
+            self.logger.debug(f"Sound playback failed for {filename}: {str(e)}")
+    
+    def _play_system_beep(self, sound_type: str):
+        """Play system beep sound on macOS"""
+        try:
+            import subprocess
+            
+            # Map sound types to system sounds
+            sound_map = {
+                'error_alert.wav': 'Basso',
+                'warning_alert.wav': 'Ping',
+                'bullish_alert.wav': 'Glass',
+                'bearish_alert.wav': 'Sosumi',
+                'breakout_alert.wav': 'Hero'
+            }
+            
+            system_sound = sound_map.get(sound_type, 'Ping')
+            subprocess.run(['afplay', f'/System/Library/Sounds/{system_sound}.aiff'], 
+                         capture_output=True, timeout=2)
             
         except Exception as e:
-            self.logger.error(f"💀 Failed to play sound file {filename}: {str(e)}")
+            self.logger.debug(f"System sound failed: {str(e)}")
     
     def _show_desktop_notification(self, title: str, message: str, priority: AlertPriority):
         """Show desktop notification"""
-        if not PLYER_AVAILABLE:
-            return
-        
         try:
-            # Determine notification timeout based on priority
-            timeout_map = {
-                AlertPriority.CRITICAL: 10,
-                AlertPriority.HIGH: 8,
-                AlertPriority.MEDIUM: 5,
-                AlertPriority.LOW: 3,
-                AlertPriority.INFO: 2
-            }
+            # Try native macOS notification first
+            if os.name == 'posix' and os.uname().sysname == 'Darwin':
+                self._show_macos_notification(title, message)
+                return
             
-            timeout = timeout_map.get(priority, 5)
-            
-            plyer.notification.notify(
-                title=f"Spartan Trading - {title}",
-                message=message,
-                timeout=timeout,
-                app_name="Spartan Trading System"
-            )
-            
+            # Fallback to plyer if available
+            if PLYER_AVAILABLE:
+                timeout_map = {
+                    AlertPriority.CRITICAL: 10,
+                    AlertPriority.HIGH: 8,
+                    AlertPriority.MEDIUM: 5,
+                    AlertPriority.LOW: 3,
+                    AlertPriority.INFO: 2
+                }
+                
+                timeout = timeout_map.get(priority, 5)
+                
+                plyer.notification.notify(
+                    title=f"Spartan Trading - {title}",
+                    message=message,
+                    timeout=timeout,
+                    app_name="Spartan Trading System"
+                )
+            else:
+                # Log notification if no system available
+                self.logger.info(f"📱 NOTIFICATION: {title} - {message}")
+                
         except Exception as e:
             self.logger.error(f"💀 Failed to show desktop notification: {str(e)}")
     
+    def _show_macos_notification(self, title: str, message: str):
+        """Show native macOS notification using osascript"""
+        try:
+            import subprocess
+            
+            # Escape quotes in title and message
+            title = title.replace('"', '\\"')
+            message = message.replace('"', '\\"')
+            
+            # Use osascript to show notification
+            script = f'''
+            display notification "{message}" with title "🏛️⚔️ Spartan Trading" subtitle "{title}"
+            '''
+            
+            subprocess.run(['osascript', '-e', script], 
+                         capture_output=True, text=True, timeout=5)
+            
+        except Exception as e:
+            self.logger.debug(f"macOS notification failed: {str(e)}")
+            # Fallback to console log
+            self.logger.info(f"📱 NOTIFICATION: {title} - {message}")
+    
     def _log_alert(self, symbol: str, message: str, alert_type: AlertType, priority: AlertPriority):
         """Log alert to console and file"""
-        priority_emoji = {
-            AlertPriority.CRITICAL: "🚨",
-            AlertPriority.HIGH: "⚠️",
-            AlertPriority.MEDIUM: "📢",
-            AlertPriority.LOW: "ℹ️",
-            AlertPriority.INFO: "💬"
-        }
-        
-        emoji = priority_emoji.get(priority, "📢")
-        log_message = f"{emoji} [{symbol}] {message}"
-        
-        if priority in [AlertPriority.CRITICAL, AlertPriority.HIGH]:
-            self.logger.warning(log_message)
+        # Only log critical alerts to avoid interfering with display
+        if priority == AlertPriority.CRITICAL:
+            priority_emoji = "🚨"
+            log_message = f"{priority_emoji} [{symbol}] {message}"
+            self.logger.error(log_message)
         else:
-            self.logger.info(log_message)
+            # Store in history but don't log to console to keep display clean
+            pass
     
     def _update_stats(self, symbol: str, alert_type: AlertType):
         """Update alert statistics"""

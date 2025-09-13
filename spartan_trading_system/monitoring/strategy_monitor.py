@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 
 from ..config.strategy_config import StrategyConfig
+from ..config.symbols_config import get_spartan_symbols
 from ..data.market_data_provider import MarketDataProvider
 from ..data.data_models import DataRequest
 from ..indicators.indicator_engine import IndicatorEngine
@@ -95,12 +96,8 @@ class StrategyMonitor:
     
     def _initialize_symbols(self):
         """Initialize symbols from configuration"""
-        symbols = getattr(self.config, 'symbols', [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT',
-            'SOLUSDT', 'DOTUSDT', 'LINKUSDT', 'LTCUSDT', 'BCHUSDT',
-            'AVAXUSDT', 'MATICUSDT', 'ATOMUSDT', 'NEARUSDT', 'FTMUSDT',
-            'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'CHZUSDT', 'ENJUSDT'
-        ])
+        # Usar símbolos de configuración si están disponibles, sino usar los símbolos Spartan por defecto
+        symbols = getattr(self.config, 'symbols', get_spartan_symbols())
         
         for symbol in symbols:
             self.add_symbol(symbol)

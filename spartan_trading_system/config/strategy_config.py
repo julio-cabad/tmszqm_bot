@@ -15,18 +15,19 @@ class StrategyConfig:
     All parameters are configurable for maximum flexibility
     """
     
-    # Multi-Crypto Configuration
-    symbols: List[str] = field(default_factory=lambda: [
-        # Top Tier - Major Cryptos
-        "BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT",
-        # Tier 1 - Established Altcoins
-        "BNBUSDT", "XRPUSDT", "MATICUSDT", "AVAXUSDT", "LINKUSDT",
-        # Tier 2 - Promising Projects
-        "ATOMUSDT", "ALGOUSDT", "VETUSDT", "FTMUSDT", "NEARUSDT",
-        # Tier 3 - Emerging Opportunities
-        "SANDUSDT", "MANAUSDT", "CHZUSDT", "ENJUSDT", "GALAUSDT"
-    ])
+    # Multi-Crypto Configuration - Symbols loaded from symbols_config.py
+    symbols: List[str] = field(default_factory=lambda: [])
     max_concurrent_symbols: int = 20
+    
+    def __post_init__(self):
+        """Initialize symbols if not provided"""
+        if not self.symbols:
+            try:
+                from .symbols_config import get_spartan_symbols
+                self.symbols = get_spartan_symbols()
+            except ImportError:
+                # Fallback to basic symbols if symbols_config is not available
+                self.symbols = ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT"]
     
     # Trend Magic Parameters (Fully Configurable)
     trend_magic_cci_period: int = 20

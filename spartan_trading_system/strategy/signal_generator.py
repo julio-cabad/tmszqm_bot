@@ -32,14 +32,9 @@ def play_alert_sound(signal_type):
 def show_trend_magic_values():
     """Show Trend Magic values for all configured symbols"""
     
-    # Symbols from config
-    symbols = [
-        "BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "DOTUSDT", 
-        "BNBUSDT", "XRPUSDT", "AVAXUSDT", "LINKUSDT", "ATOMUSDT",
-        "ALGOUSDT", "VETUSDT", "NEARUSDT", "SANDUSDT", "MANAUSDT",
-        "CHZUSDT", "ENJUSDT", "GALAUSDT", "TIAUSDT", "DOGEUSDT",
-        "SUIUSDT", "HBARUSDT"
-    ]
+    # Symbols from centralized config
+    from spartan_trading_system.config.symbols_config import get_spartan_symbols
+    symbols = get_spartan_symbols()
     
     # Get current time in UTC-5
     utc_minus_5 = timezone(timedelta(hours=-5))
