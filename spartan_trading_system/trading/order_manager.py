@@ -74,8 +74,9 @@ class OrderManager:
             OrderSuggestion or None
         """
         try:
-            # Use fixed position size of $100 for testing
-            position_value = 100.0  # Fixed $100 per position
+            # Import position size from settings
+            from config.settings import POSITION_SIZE
+            position_value = POSITION_SIZE
             
             # Adjust stop loss distance based on timeframe volatility
             stop_loss_multiplier = self._get_stop_loss_multiplier(timeframe)

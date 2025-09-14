@@ -162,7 +162,7 @@ def main():
                         for pos in open_positions:
                             side_emoji = "🟢" if pos['side'] == 'LONG' else "🔴"
                             pnl_emoji = "💚" if pos['current_pnl'] >= 0 else "💔"
-                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.2f} ({pos['pnl_pct']:+.1f}%)")
+                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.2f} ({pos['pnl_pct']:+.1f}%) | Entry: ${pos['entry_price']:.4f} → Current: ${pos['current_price']:.4f}")
                     
                     # Show performance stats if we have trades
                     if perf_stats['total_trades'] > 0:
@@ -199,9 +199,9 @@ def main():
                 except Exception:
                     pass  # Don't let alert display errors break the main loop
                 
-                # Wait 30 seconds with countdown
+                # Wait 5 seconds with countdown (faster updates)
                 print(f"\n⏳ Próxima actualización en:")
-                for i in range(10, 0, -1):
+                for i in range(5, 0, -1):
                     print(f"\r⏱️  {i:2d}s", end="", flush=True)
                     time.sleep(1)
                 print()

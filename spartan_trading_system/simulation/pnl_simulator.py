@@ -39,9 +39,23 @@ class Position:
     def calculate_pnl(self, current_price: float) -> float:
         """Calculate current PnL without commissions"""
         if self.side == PositionSide.LONG:
-            return (current_price - self.entry_price) * self.quantity
+            price_diff = current_price - self.entry_price
+            gross_pnl = price_diff * self.quantity
         else:  # SHORT
-            return (self.entry_price - current_price) * self.quantity
+            price_diff = self.entry_price - current_price
+            gross_pnl = price_diff * self.quantity
+        
+        # Debug logging to identify calculation issues
+        position_value = self.entry_price * self.quantity
+        import logging
+        logger = logging.getLogger("PnLSimulator")
+        logger.debug(
+            f"🔍 {self.symbol} PnL Calc: Entry=${self.entry_price:.4f} | Current=${current_price:.4f} | "
+            f"Qty={self.quantity:.6f} | PriceDiff=${price_diff:.4f} | Gross=${gross_pnl:.4f} | "
+            f"PositionValue=${position_value:.2f}"
+        )
+        
+        return gross_pnl
     
     def calculate_real_pnl(self, current_price: float, exit_commission: float = 0.0) -> float:
         """Calculate real PnL including all commissions"""
@@ -157,6 +171,16 @@ class PnLSimulator:
             position_value = entry_price * quantity
             entry_commission = position_value * self.maker_fee
             
+            # Validate position value is close to target ($100)
+            from config.settings import POSITION_SIZE
+            value_diff = abs(position_value - POSITION_SIZE)
+            if value_diff > 0.01:  # More than $0.01 difference
+                self.logger.warning(
+                    f"⚠️ Position value deviation for {symbol}: "
+                    f"Expected=${POSITION_SIZE:.2f}, Actual=${position_value:.2f}, "
+                    f"Diff=${value_diff:.2f}"
+                )
+            
             # Create position
             position = Position(
                 symbol=symbol,
@@ -175,6 +199,7 @@ class PnLSimulator:
             
             self.logger.info(f"📈 Opened {side} position: {symbol} @ ${entry_price:.4f} | Qty: {quantity:.6f} | Commission: ${entry_commission:.2f}")
             self.logger.info(f"🔍 Position details: SL=${stop_loss:.4f} | TP=${take_profit:.4f} | Capital=${position_value:.2f}")
+            self.logger.info(f"🔍 Quantity calculation: ${POSITION_SIZE:.2f} / ${entry_price:.4f} = {quantity:.6f}")
             self.logger.info(f"🔍 Total open positions: {len(self.open_positions)}")
             return True
             
@@ -326,9 +351,9 @@ class PnLSimulator:
                 exit_commission = current_price * position.quantity * self.taker_fee
                 real_pnl = position.calculate_real_pnl(current_price, exit_commission)
                 
-                # Calculate percentage based on invested capital (not position value)
-                invested_capital = position.entry_price * position.quantity
-                pnl_pct = (real_pnl / invested_capital) * 100
+                # Calculate percentage based on fixed position size ($100)
+                from config.settings import POSITION_SIZE
+                pnl_pct = (real_pnl / POSITION_SIZE) * 100
                 
                 # Debug logging
                 self.logger.debug(f"🔍 {symbol} PnL: Entry=${position.entry_price:.4f} | Current=${current_price:.4f} | Gross=${gross_pnl:.2f} | Real=${real_pnl:.2f} | %={pnl_pct:.2f}%")

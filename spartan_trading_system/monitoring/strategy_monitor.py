@@ -293,14 +293,24 @@ class StrategyMonitor:
             try:
                 start_time = time.time()
                 
-                # Process all symbols concurrently
+                # Process symbols with priority for open positions
                 futures = []
                 
-                for symbol in list(self.active_symbols):  # Create copy to avoid modification during iteration
+                # Get symbols with open positions (high priority)
+                priority_symbols = list(self.pnl_simulator.open_positions.keys())
+                regular_symbols = [s for s in self.active_symbols if s not in priority_symbols]
+                
+                # Process priority symbols first (with positions)
+                for symbol in priority_symbols:
                     if not self.monitoring_active:
                         break
-                    
-                    # Submit symbol processing to thread pool
+                    future = self.thread_pool.submit(self._process_symbol, symbol)
+                    futures.append((symbol, future))
+                
+                # Process regular symbols (without positions)
+                for symbol in regular_symbols:
+                    if not self.monitoring_active:
+                        break
                     future = self.thread_pool.submit(self._process_symbol, symbol)
                     futures.append((symbol, future))
                 
@@ -320,10 +330,21 @@ class StrategyMonitor:
                 
                 # Calculate sleep time to maintain update interval
                 processing_time = time.time() - start_time
-                sleep_time = max(1, 60 - processing_time)  # Minimum 1 second, target 60 seconds
+                sleep_time = max(1, 30 - processing_time)  # Minimum 1 second, target 30 seconds
                 
                 self.logger.debug(f"🔄 Monitoring cycle completed in {processing_time:.2f}s, sleeping {sleep_time:.2f}s")
-                time.sleep(sleep_time)
+                
+                # Fast sub-loop for position monitoring (every 10 seconds)
+                sub_loops = max(1, int(sleep_time / 10))  # Divide sleep time into 10s chunks
+                for i in range(sub_loops):
+                    if not self.monitoring_active:
+                        break
+                    
+                    # Quick update for positions only
+                    if self.pnl_simulator.open_positions:
+                        self._quick_position_update()
+                    
+                    time.sleep(min(10, sleep_time / sub_loops))
                 
             except Exception as e:
                 self.logger.error(f"💀 Monitoring loop error: {str(e)}")
@@ -592,6 +613,43 @@ class StrategyMonitor:
         
         except Exception as e:
             self.logger.error(f"💀 Error handling failed for {symbol}: {str(e)}")
+    
+    def _quick_position_update(self):
+        """Quick update for positions only (every 10 seconds)"""
+        try:
+            # Only update symbols with open positions
+            priority_symbols = list(self.pnl_simulator.open_positions.keys())
+            
+            if not priority_symbols:
+                return
+            
+            # Quick price update for position symbols only
+            market_data = {}
+            for symbol in priority_symbols:
+                try:
+                    from indicators.technical_indicators import TechnicalAnalyzer
+                    analyzer = TechnicalAnalyzer(symbol, "1m")
+                    analyzer.fetch_market_data(limit=50)  # Smaller limit for speed
+                    
+                    tm_result = analyzer.trend_magic_v3(period=100)
+                    if tm_result:
+                        current_price = tm_result['current_price']
+                        market_data[symbol] = current_price
+                        
+                        # Update symbol status
+                        symbol_status = self.monitoring_status.symbols.get(symbol)
+                        if symbol_status:
+                            symbol_status.current_price = current_price
+                            
+                except Exception as e:
+                    self.logger.debug(f"Quick update failed for {symbol}: {str(e)}")
+            
+            # Update PnL simulator
+            if market_data:
+                self.pnl_simulator.update_positions(market_data)
+                
+        except Exception as e:
+            self.logger.error(f"💀 Quick position update failed: {str(e)}")
     
     def _update_pnl_simulator(self):
         """Update PnL simulator with current market prices"""

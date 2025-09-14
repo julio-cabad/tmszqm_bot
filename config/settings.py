@@ -52,6 +52,7 @@ taker_fee: float = 0.0005  # 0.05% - cuando tomas liquidez
 MAX_OPEN_POSITIONS: int = 5  # Máximo número de posiciones simultáneas
 INITIAL_BALANCE: float = 1000.0  # Balance inicial para simulación
 AUTO_CLOSE_ON_TARGET: bool = True  # Cerrar automáticamente en take profit/stop loss
+POSITION_SIZE: float = 100.0  # Tamaño fijo de posición en USD
 
 time_frame: str = '4h'
 
