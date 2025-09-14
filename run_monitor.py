@@ -25,6 +25,7 @@ logging.getLogger("IndicatorEngine").setLevel(logging.CRITICAL)
 logging.getLogger("RobotBinance").setLevel(logging.CRITICAL)
 logging.getLogger("StrategyMonitor").setLevel(logging.CRITICAL)  # Disable debug logs
 logging.getLogger("AlertManager").setLevel(logging.CRITICAL)  # Suppress alert logs during display
+logging.getLogger("TradeLogger").setLevel(logging.INFO)  # Enable trade logger logs
 logging.getLogger("PnLSimulator").setLevel(logging.WARNING)  # Disable debug logs
 
 from spartan_trading_system.config.strategy_config import StrategyConfig
@@ -58,9 +59,27 @@ def display_spartan_monitoring_status(monitor, timeframe="1m"):
                 tm_color = symbol_status.trend_magic_color or "UNKNOWN"
                 squeeze_color = symbol_status.squeeze_status or "UNKNOWN"
                 
-                # Use placeholder values for display format compatibility
-                tm_value = price * 0.999  # Approximate TM value for display
-                open_price = price * 1.001  # Approximate open price for display
+                # Get REAL TM value and open price using correct timeframe
+                try:
+                    from indicators.technical_indicators import TechnicalAnalyzer
+                    analyzer = TechnicalAnalyzer(symbol, timeframe)  # Use correct timeframe
+                    analyzer.fetch_market_data(limit=200)
+                    tm_result = analyzer.trend_magic_v3(period=100)
+                    
+                    if tm_result:
+                        tm_value = tm_result['magic_trend_value']
+                        # Get actual open price from current candle
+                        if hasattr(analyzer, 'df') and not analyzer.df.empty:
+                            open_price = analyzer.df['open'].iloc[-1]
+                        else:
+                            open_price = price
+                    else:
+                        tm_value = price * 0.999  # Fallback
+                        open_price = price
+                except Exception as e:
+                    tm_value = price * 0.999  # Fallback on error
+                    open_price = price
+                
                 open_time_utc5 = datetime.now(utc_minus_5).strftime("%H:%M:%S")
                 
                 # Format with emojis
@@ -154,7 +173,7 @@ def main():
                     balance_pct = (balance_change / perf_stats['initial_balance']) * 100
                     balance_emoji = "💚" if balance_change >= 0 else "💔"
                     
-                    print(f"\n{balance_emoji} PnL Simulator - Balance: ${total_balance:.2f} ({balance_pct:+.2f}%)")
+                    print(f"\n{balance_emoji} PnL Simulator - Balance: ${total_balance:.3f} ({balance_pct:+.3f}%)")
                     
                     # Show open positions with TP/SL and proximity
                     if open_positions:
@@ -185,12 +204,20 @@ def main():
                             # Get current time
                             current_time = datetime.now().strftime("%H:%M:%S")
                             
-                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.2f} ({pos['pnl_pct']:+.1f}%) | "
-                                  f"TP: {tp_distance:.0f}% | SL: {sl_distance:.0f}% | Time: {current_time}")
+                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.3f} ({pos['pnl_pct']:+.3f}%) | "
+                                  f"TP: {tp_distance:.3f}% | SL: {sl_distance:.3f}% | Time: {current_time}")
                     
                     # Show performance stats if we have trades
                     if perf_stats['total_trades'] > 0:
-                        print(f"📈 Stats: {perf_stats['total_trades']} trades | {perf_stats['win_rate']:.0f}% win rate | ${perf_stats['total_commissions']:.2f} fees")
+                        print(f"📈 Stats: {perf_stats['total_trades']} trades | {perf_stats['win_rate']:.3f}% win rate | ${perf_stats['total_commissions']:.3f} fees")
+                        
+                        # Show trade logger session stats
+                        try:
+                            session_stats = monitor.pnl_simulator.get_trade_logger_stats()
+                            if session_stats['total_trades'] > 0:
+                                print(f"📊 Session: {session_stats['total_trades']} logged | Avg PnL: ${session_stats['avg_pnl']:.3f} | Best: ${session_stats['best_trade']:.3f} | Worst: ${session_stats['worst_trade']:.3f}")
+                        except Exception:
+                            pass
                     
                 except Exception as e:
                     print(f"💀 PnL Display Error: {str(e)}")  # Show the error temporarily

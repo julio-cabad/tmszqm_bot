@@ -508,6 +508,15 @@ class StrategyMonitor:
                                 
                                 # Open position in simulator if suggestion was created and we can open more positions
                                 if order_suggestion and self.pnl_simulator.can_open_position():
+                                    # Set metadata for trade logging
+                                    self.pnl_simulator.set_position_metadata(
+                                        symbol=symbol,
+                                        timeframe=primary_timeframe,
+                                        trend_magic_value=tm_value,
+                                        trend_magic_color=tm_color,
+                                        squeeze_momentum=squeeze_color
+                                    )
+                                    
                                     position_opened = self.pnl_simulator.open_position(
                                         symbol=symbol,
                                         side=signal_detected,

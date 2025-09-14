@@ -14,6 +14,7 @@ import os
 # Add config to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 from config.settings import maker_fee, taker_fee, MAX_OPEN_POSITIONS, INITIAL_BALANCE, AUTO_CLOSE_ON_TARGET
+from ..logging.sqlite_trade_logger import SQLiteTradeLogger
 
 class PositionSide(Enum):
     LONG = "LONG"
@@ -59,16 +60,24 @@ class Position:
         """Check if position should be closed based on stop loss or take profit"""
         if not AUTO_CLOSE_ON_TARGET:
             return None
-            
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger("PnLSimulator")
+        
         if self.side == PositionSide.LONG:
             if current_price <= self.stop_loss:
+                logger.info(f"🔍 DEBUG: {self.symbol} LONG hit SL - Price: ${current_price:.4f} <= SL: ${self.stop_loss:.4f}")
                 return CloseReason.STOP_LOSS
             elif current_price >= self.take_profit:
+                logger.info(f"🔍 DEBUG: {self.symbol} LONG hit TP - Price: ${current_price:.4f} >= TP: ${self.take_profit:.4f}")
                 return CloseReason.TAKE_PROFIT
         else:  # SHORT
             if current_price >= self.stop_loss:
+                logger.info(f"🔍 DEBUG: {self.symbol} SHORT hit SL - Price: ${current_price:.4f} >= SL: ${self.stop_loss:.4f}")
                 return CloseReason.STOP_LOSS
             elif current_price <= self.take_profit:
+                logger.info(f"🔍 DEBUG: {self.symbol} SHORT hit TP - Price: ${current_price:.4f} <= TP: ${self.take_profit:.4f}")
                 return CloseReason.TAKE_PROFIT
         
         return None
@@ -87,6 +96,8 @@ class ClosedTrade:
     real_pnl: float
     total_commissions: float
     close_reason: CloseReason
+    stop_loss: float
+    take_profit: float
     
     @property
     def is_winner(self) -> bool:
@@ -125,12 +136,35 @@ class PnLSimulator:
         self.winning_trades = 0
         self.total_commissions_paid = 0.0
         
+        # Trade logging with SQLite
+        self.trade_logger = SQLiteTradeLogger()
+        
+        # Store additional data for logging
+        self.position_metadata: Dict[str, Dict[str, Any]] = {}
+        
+        # Debug: Track if positions are being closed
+        self.debug_mode = False  # Set to True for debugging
+        
         self.logger.info(f"🏛️ PnL Simulator initialized - Balance: ${self.initial_balance}")
         self.logger.info(f"⚙️ Max positions: {self.max_positions} | Fees: {self.maker_fee:.4f}/{self.taker_fee:.4f}")
+        self.logger.info(f"📊 Trade logging enabled - Path: trade_logs/")
     
     def can_open_position(self) -> bool:
         """Check if we can open a new position"""
         return len(self.open_positions) < self.max_positions
+    
+    def set_position_metadata(self, symbol: str, timeframe: str, trend_magic_value: float = 0.0,
+                             trend_magic_color: str = "UNKNOWN", squeeze_momentum: str = "UNKNOWN"):
+        """Set additional metadata for position logging"""
+        if symbol not in self.position_metadata:
+            self.position_metadata[symbol] = {}
+        
+        self.position_metadata[symbol].update({
+            'timeframe': timeframe,
+            'trend_magic_value': trend_magic_value,
+            'trend_magic_color': trend_magic_color,
+            'squeeze_momentum': squeeze_momentum
+        })
     
     def open_position(self, symbol: str, side: str, entry_price: float, 
                      quantity: float, stop_loss: float, take_profit: float) -> bool:
@@ -169,8 +203,8 @@ class PnLSimulator:
             if value_diff > 0.01:  # More than $0.01 difference
                 self.logger.warning(
                     f"⚠️ Position value deviation for {symbol}: "
-                    f"Expected=${POSITION_SIZE:.2f}, Actual=${position_value:.2f}, "
-                    f"Diff=${value_diff:.2f}"
+                    f"Expected=${POSITION_SIZE:.3f}, Actual=${position_value:.3f}, "
+                    f"Diff=${value_diff:.3f}"
                 )
             
             # Create position
@@ -189,9 +223,9 @@ class PnLSimulator:
             self.open_positions[symbol] = position
             self.total_commissions_paid += entry_commission
             
-            self.logger.info(f"📈 Opened {side} position: {symbol} @ ${entry_price:.4f} | Qty: {quantity:.6f} | Commission: ${entry_commission:.2f}")
-            self.logger.info(f"🔍 Position details: SL=${stop_loss:.4f} | TP=${take_profit:.4f} | Capital=${position_value:.2f}")
-            self.logger.info(f"🔍 Quantity calculation: ${POSITION_SIZE:.2f} / ${entry_price:.4f} = {quantity:.6f}")
+            self.logger.info(f"📈 Opened {side} position: {symbol} @ ${entry_price:.3f} | Qty: {quantity:.6f} | Commission: ${entry_commission:.3f}")
+            self.logger.info(f"🔍 Position details: SL=${stop_loss:.3f} | TP=${take_profit:.3f} | Capital=${position_value:.3f}")
+            self.logger.info(f"🔍 Quantity calculation: ${POSITION_SIZE:.3f} / ${entry_price:.3f} = {quantity:.6f}")
             self.logger.info(f"🔍 Total open positions: {len(self.open_positions)}")
             return True
             
@@ -239,7 +273,9 @@ class PnLSimulator:
                 gross_pnl=gross_pnl,
                 real_pnl=real_pnl,
                 total_commissions=total_commissions,
-                close_reason=reason
+                close_reason=reason,
+                stop_loss=position.stop_loss,
+                take_profit=position.take_profit
             )
             
             # Update statistics
@@ -251,11 +287,36 @@ class PnLSimulator:
             if closed_trade.is_winner:
                 self.winning_trades += 1
             
+            # Log trade with metadata
+            metadata = self.position_metadata.get(symbol, {})
+            
+            # Debug logging
+            if self.debug_mode:
+                self.logger.info(f"🔍 DEBUG: Logging trade for {symbol} | Metadata: {metadata}")
+            
+            trade_logged = self.trade_logger.log_trade(
+                closed_trade=closed_trade,
+                timeframe=metadata.get('timeframe', 'unknown'),
+                trend_magic_value=metadata.get('trend_magic_value', 0.0),
+                trend_magic_color=metadata.get('trend_magic_color', 'UNKNOWN'),
+                squeeze_momentum=metadata.get('squeeze_momentum', 'UNKNOWN')
+            )
+            
+            if self.debug_mode:
+                self.logger.info(f"🔍 DEBUG: Trade logged successfully: {trade_logged}")
+            
+            # Clean up metadata
+            self.position_metadata.pop(symbol, None)
+            
             # Remove from open positions
             del self.open_positions[symbol]
             
             result_emoji = "💚" if closed_trade.is_winner else "💔"
-            self.logger.info(f"{result_emoji} Closed {position.side.value} {symbol}: PnL ${real_pnl:.2f} | Reason: {reason.value}")
+            
+            # FORCE PRINT TO CONSOLE
+            print(f"🔥 POSITION CLOSED: {symbol} {position.side.value} | PnL: ${real_pnl:.3f} | Reason: {reason.value}")
+            
+            self.logger.info(f"{result_emoji} Closed {position.side.value} {symbol}: PnL ${real_pnl:.3f} | Reason: {reason.value}")
             
             return closed_trade
             
@@ -271,6 +332,9 @@ class PnLSimulator:
             market_data: Dictionary of symbol -> current_price
         """
         try:
+            if self.debug_mode and self.open_positions:
+                self.logger.info(f"🔍 DEBUG: Updating {len(self.open_positions)} positions with market data")
+            
             positions_to_close = []
             
             for symbol, position in self.open_positions.items():
@@ -281,9 +345,13 @@ class PnLSimulator:
                     close_reason = position.should_close(current_price)
                     if close_reason:
                         positions_to_close.append((symbol, current_price, close_reason))
+                        if self.debug_mode:
+                            self.logger.info(f"🔍 DEBUG: {symbol} should close - Reason: {close_reason.value} | Price: ${current_price:.4f}")
             
             # Close positions that hit stop loss or take profit
             for symbol, price, reason in positions_to_close:
+                if self.debug_mode:
+                    self.logger.info(f"🔍 DEBUG: Closing {symbol} - Reason: {reason.value}")
                 self.close_position(symbol, price, reason)
                 
         except Exception as e:
@@ -363,6 +431,31 @@ class PnLSimulator:
         
         return positions_summary
     
+    def get_trade_logger_stats(self) -> Dict[str, Any]:
+        """Get trade logging statistics"""
+        return self.trade_logger.get_session_stats()
+    
+    def get_timeframe_performance(self, timeframe: str) -> Dict[str, Any]:
+        """Get performance statistics for a specific timeframe"""
+        return self.trade_logger.get_timeframe_summary(timeframe)
+    
+    def export_trades_to_csv(self, timeframe: str, output_file: str) -> bool:
+        """Export trades to CSV for analysis"""
+        return self.trade_logger.export_to_csv(timeframe, output_file)
+    
+    def force_close_position(self, symbol: str) -> bool:
+        """Force close a position for testing (manual close)"""
+        if symbol not in self.open_positions:
+            self.logger.warning(f"⚠️ No position found for {symbol}")
+            return False
+        
+        position = self.open_positions[symbol]
+        # Use current entry price as exit price for testing
+        exit_price = position.entry_price * 1.01  # Simulate small profit
+        
+        closed_trade = self.close_position(symbol, exit_price, CloseReason.MANUAL)
+        return closed_trade is not None
+    
     def clear_all_positions(self):
         """Clear all positions (for testing/reset)"""
         self.open_positions.clear()
@@ -371,4 +464,5 @@ class PnLSimulator:
         self.total_trades = 0
         self.winning_trades = 0
         self.total_commissions_paid = 0.0
+        self.position_metadata.clear()
         self.logger.info("🔄 All positions cleared - Simulator reset")
