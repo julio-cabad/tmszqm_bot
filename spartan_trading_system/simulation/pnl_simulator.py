@@ -45,15 +45,7 @@ class Position:
             price_diff = self.entry_price - current_price
             gross_pnl = price_diff * self.quantity
         
-        # Debug logging to identify calculation issues
-        position_value = self.entry_price * self.quantity
-        import logging
-        logger = logging.getLogger("PnLSimulator")
-        logger.debug(
-            f"🔍 {self.symbol} PnL Calc: Entry=${self.entry_price:.4f} | Current=${current_price:.4f} | "
-            f"Qty={self.quantity:.6f} | PriceDiff=${price_diff:.4f} | Gross=${gross_pnl:.4f} | "
-            f"PositionValue=${position_value:.2f}"
-        )
+        # Calculation completed - debug logging removed for cleaner console
         
         return gross_pnl
     
@@ -355,8 +347,7 @@ class PnLSimulator:
                 from config.settings import POSITION_SIZE
                 pnl_pct = (real_pnl / POSITION_SIZE) * 100
                 
-                # Debug logging
-                self.logger.debug(f"🔍 {symbol} PnL: Entry=${position.entry_price:.4f} | Current=${current_price:.4f} | Gross=${gross_pnl:.2f} | Real=${real_pnl:.2f} | %={pnl_pct:.2f}%")
+                # PnL calculation completed - debug logging removed for cleaner console
                 
                 positions_summary.append({
                     'symbol': symbol,

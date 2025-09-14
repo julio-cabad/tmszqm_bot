@@ -25,7 +25,7 @@ logging.getLogger("IndicatorEngine").setLevel(logging.CRITICAL)
 logging.getLogger("RobotBinance").setLevel(logging.CRITICAL)
 logging.getLogger("StrategyMonitor").setLevel(logging.CRITICAL)  # Disable debug logs
 logging.getLogger("AlertManager").setLevel(logging.CRITICAL)  # Suppress alert logs during display
-logging.getLogger("PnLSimulator").setLevel(logging.DEBUG)  # Enable PnL simulator debug logs
+logging.getLogger("PnLSimulator").setLevel(logging.WARNING)  # Disable debug logs
 
 from spartan_trading_system.config.strategy_config import StrategyConfig
 from spartan_trading_system.config.symbols_config import get_spartan_symbols
@@ -156,13 +156,37 @@ def main():
                     
                     print(f"\n{balance_emoji} PnL Simulator - Balance: ${total_balance:.2f} ({balance_pct:+.2f}%)")
                     
-                    # Show open positions
+                    # Show open positions with TP/SL and proximity
                     if open_positions:
                         print(f"📊 Open Positions ({len(open_positions)}/{perf_stats['max_positions']}):")
                         for pos in open_positions:
                             side_emoji = "🟢" if pos['side'] == 'LONG' else "🔴"
                             pnl_emoji = "💚" if pos['current_pnl'] >= 0 else "💔"
-                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.2f} ({pos['pnl_pct']:+.1f}%) | Entry: ${pos['entry_price']:.4f} → Current: ${pos['current_price']:.4f}")
+                            
+                            # Calculate proximity to TP and SL
+                            current_price = pos['current_price']
+                            entry_price = pos['entry_price']
+                            tp_price = pos['take_profit']
+                            sl_price = pos['stop_loss']
+                            
+                            if pos['side'] == 'LONG':
+                                # For LONG: TP is above, SL is below
+                                tp_distance = ((tp_price - current_price) / (tp_price - entry_price)) * 100
+                                sl_distance = ((current_price - sl_price) / (entry_price - sl_price)) * 100
+                            else:
+                                # For SHORT: TP is below, SL is above  
+                                tp_distance = ((entry_price - current_price) / (entry_price - tp_price)) * 100
+                                sl_distance = ((sl_price - current_price) / (sl_price - entry_price)) * 100
+                            
+                            # Clamp distances to 0-100%
+                            tp_distance = max(0, min(100, tp_distance))
+                            sl_distance = max(0, min(100, sl_distance))
+                            
+                            # Get current time
+                            current_time = datetime.now().strftime("%H:%M:%S")
+                            
+                            print(f"   {side_emoji} {pos['symbol']} {pos['side']}: {pnl_emoji}${pos['current_pnl']:+.2f} ({pos['pnl_pct']:+.1f}%) | "
+                                  f"TP: {tp_distance:.0f}% | SL: {sl_distance:.0f}% | Time: {current_time}")
                     
                     # Show performance stats if we have trades
                     if perf_stats['total_trades'] > 0:
@@ -171,33 +195,22 @@ def main():
                 except Exception as e:
                     print(f"💀 PnL Display Error: {str(e)}")  # Show the error temporarily
                 
-                # Show trading suggestions (if any remaining)
-                try:
-                    suggestions = monitor.order_manager.get_active_suggestions()
-                    if suggestions:
-                        print(f"\n💡 Pending Suggestions ({len(suggestions)}):")
-                        print("=" * 60)
-                        for symbol, suggestion in suggestions.items():
-                            formatted_suggestion = monitor.order_manager.format_order_suggestion(suggestion)
-                            print(formatted_suggestion)
-                            print("-" * 60)
-                except Exception:
-                    pass  # Don't let suggestion display errors break the main loop
+                # Trading suggestions are now shown above in the main display
                 
-                # Show recent alerts (last 3) in a clean format
+                # Show recent alerts in a cleaner format
                 try:
-                    recent_alerts = monitor.alert_manager.get_recent_alerts(10)
+                    recent_alerts = monitor.alert_manager.get_recent_alerts(5)
                     if recent_alerts:
                         print(f"\n🔔 Alertas Recientes:")
-                        for alert in recent_alerts[-10:]:  # Last 10 alerts
+                        for alert in recent_alerts[-5:]:  # Last 5 alerts only
                             if isinstance(alert.get('timestamp'), datetime):
                                 timestamp = alert['timestamp'].strftime("%H:%M:%S")
                             else:
                                 timestamp = str(alert.get('timestamp', ''))[:8]
-                            message = alert.get('message', '')[:60]  # Truncate long messages
+                            message = alert.get('message', '')[:80]  # Slightly longer messages
                             print(f"   {timestamp} - {message}")
                 except Exception:
-                    pass  # Don't let alert display errors break the main loop
+                    pass
                 
                 # Wait 5 seconds with countdown (faster updates)
                 print(f"\n⏳ Próxima actualización en:")
