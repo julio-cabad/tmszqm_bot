@@ -136,7 +136,7 @@ def main():
     print("=" * 50)
     
     # Configurar timeframe
-    timeframe = input("Timeframe (1m/5m/15m/30m/1h/4h) [1m]: ").strip() or "1m"
+    timeframe = input("Timeframe (1m/5m/15m/30m/1h/2h/4h) [1m]: ").strip() or "1m"
     
     # Crear configuración
     config = StrategyConfig()

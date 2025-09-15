@@ -15,6 +15,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 from config.settings import maker_fee, taker_fee, MAX_OPEN_POSITIONS, INITIAL_BALANCE, AUTO_CLOSE_ON_TARGET
 from ..logging.sqlite_trade_logger import SQLiteTradeLogger
+from ..notifications.telegram_notifier import TelegramNotifier
+from ..notifications.telegram_config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, ENABLE_NOTIFICATIONS
 
 class PositionSide(Enum):
     LONG = "LONG"
@@ -139,6 +141,16 @@ class PnLSimulator:
         # Trade logging with SQLite
         self.trade_logger = SQLiteTradeLogger()
         
+        # Telegram notifications
+        if ENABLE_NOTIFICATIONS:
+            try:
+                self.telegram_notifier = TelegramNotifier(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Telegram notifier failed to initialize: {str(e)}")
+                self.telegram_notifier = None
+        else:
+            self.telegram_notifier = None
+        
         # Store additional data for logging
         self.position_metadata: Dict[str, Dict[str, Any]] = {}
         
@@ -227,6 +239,24 @@ class PnLSimulator:
             self.logger.info(f"🔍 Position details: SL=${stop_loss:.3f} | TP=${take_profit:.3f} | Capital=${position_value:.3f}")
             self.logger.info(f"🔍 Quantity calculation: ${POSITION_SIZE:.3f} / ${entry_price:.3f} = {quantity:.6f}")
             self.logger.info(f"🔍 Total open positions: {len(self.open_positions)}")
+            
+            # Send Telegram notification
+            if self.telegram_notifier:
+                try:
+                    metadata = self.position_metadata.get(symbol, {})
+                    timeframe = metadata.get('timeframe', '1m')
+                    self.telegram_notifier.notify_position_opened(
+                        symbol=symbol,
+                        side=side,
+                        entry_price=entry_price,
+                        quantity=quantity,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit,
+                        timeframe=timeframe
+                    )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to send Telegram notification: {str(e)}")
+            
             return True
             
         except Exception as e:
@@ -317,6 +347,28 @@ class PnLSimulator:
             print(f"🔥 POSITION CLOSED: {symbol} {position.side.value} | PnL: ${real_pnl:.3f} | Reason: {reason.value}")
             
             self.logger.info(f"{result_emoji} Closed {position.side.value} {symbol}: PnL ${real_pnl:.3f} | Reason: {reason.value}")
+            
+            # Send Telegram notification
+            if self.telegram_notifier:
+                try:
+                    metadata = self.position_metadata.get(symbol, {})
+                    timeframe = metadata.get('timeframe', '1m')
+                    self.telegram_notifier.notify_position_closed(
+                        symbol=symbol,
+                        side=position.side.value,
+                        entry_price=position.entry_price,
+                        exit_price=exit_price,
+                        quantity=position.quantity,
+                        gross_pnl=gross_pnl,
+                        real_pnl=real_pnl,
+                        total_commissions=total_commissions,
+                        close_reason=reason.value,
+                        entry_time=position.entry_time,
+                        exit_time=datetime.now(),
+                        timeframe=timeframe
+                    )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to send Telegram notification: {str(e)}")
             
             return closed_trade
             
