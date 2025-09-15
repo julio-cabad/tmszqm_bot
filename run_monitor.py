@@ -51,7 +51,7 @@ def display_spartan_monitoring_status(monitor, timeframe="1m"):
         print(f"{'Symbol':<10} {'TM Value':<12} {'Color':<6} {'Price':<12} {'Open Price':<12} {'Open Time':<16} {'Squeeze':<10} {'Signal':<10}")
         print("-" * 130)
         
-        # Display symbols using data from strategy_monitor.py
+        # Display symbols using data from strategy_monitor.py (FAST VERSION)
         for symbol, symbol_status in status.symbols.items():
             try:
                 # Use data that strategy_monitor.py already calculated
@@ -59,27 +59,44 @@ def display_spartan_monitoring_status(monitor, timeframe="1m"):
                 tm_color = symbol_status.trend_magic_color or "UNKNOWN"
                 squeeze_color = symbol_status.squeeze_status or "UNKNOWN"
                 
-                # Get REAL TM value and open price using correct timeframe
-                try:
-                    from indicators.technical_indicators import TechnicalAnalyzer
-                    analyzer = TechnicalAnalyzer(symbol, timeframe)  # Use correct timeframe
-                    analyzer.fetch_market_data(limit=200)
-                    tm_result = analyzer.trend_magic_v3(period=100)
-                    
-                    if tm_result:
-                        tm_value = tm_result['magic_trend_value']
-                        # Get actual open price from current candle
-                        if hasattr(analyzer, 'df') and not analyzer.df.empty:
+                # Get REAL TM value with CACHE for speed
+                cache_key = f"{symbol}_{timeframe}"
+                
+                # Check if we have cached data (refresh every 30 seconds)
+                current_time = time.time()
+                if not hasattr(display_spartan_monitoring_status, 'cache'):
+                    display_spartan_monitoring_status.cache = {}
+                
+                if (cache_key in display_spartan_monitoring_status.cache and 
+                    current_time - display_spartan_monitoring_status.cache[cache_key]['timestamp'] < 30):
+                    # Use cached data
+                    cached_data = display_spartan_monitoring_status.cache[cache_key]
+                    tm_value = cached_data['tm_value']
+                    open_price = cached_data['open_price']
+                else:
+                    # Calculate new data and cache it
+                    try:
+                        from indicators.technical_indicators import TechnicalAnalyzer
+                        analyzer = TechnicalAnalyzer(symbol, timeframe)
+                        analyzer.fetch_market_data(limit=50)  # Very small limit for speed
+                        tm_result = analyzer.trend_magic_v3(period=100)
+                        
+                        if tm_result and hasattr(analyzer, 'df') and not analyzer.df.empty:
+                            tm_value = tm_result['magic_trend_value']
                             open_price = analyzer.df['open'].iloc[-1]
                         else:
+                            tm_value = price * 0.999
                             open_price = price
-                    else:
-                        tm_value = price * 0.999  # Fallback
+                        
+                        # Cache the results
+                        display_spartan_monitoring_status.cache[cache_key] = {
+                            'tm_value': tm_value,
+                            'open_price': open_price,
+                            'timestamp': current_time
+                        }
+                    except:
+                        tm_value = price * 0.999
                         open_price = price
-                except Exception as e:
-                    tm_value = price * 0.999  # Fallback on error
-                    open_price = price
-                
                 open_time_utc5 = datetime.now(utc_minus_5).strftime("%H:%M:%S")
                 
                 # Format with emojis
@@ -107,8 +124,12 @@ def display_spartan_monitoring_status(monitor, timeframe="1m"):
         
         print("-" * 130)
         
+        # Force flush output to ensure immediate display
+        sys.stdout.flush()
+        
     except Exception as e:
         print(f"Error displaying status: {e}")
+        sys.stdout.flush()
 
 def main():
     print("🏛️⚔️ SPARTAN PROFESSIONAL MONITORING SYSTEM")
@@ -144,8 +165,20 @@ def main():
             
             # Loop de monitoreo con TU FORMATO
             while True:
-                # Clear screen every 30 seconds
-                os.system('cls' if os.name == 'nt' else 'clear')
+                # FORCE CLEAR SCREEN - Multiple methods
+                try:
+                    # Method 1: Standard clear
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                    
+                    # Method 2: ANSI escape sequences (more reliable)
+                    print('\033[2J\033[H', end='')
+                    
+                    # Method 3: Print newlines to push old content up
+                    print('\n' * 50)
+                    
+                except:
+                    # Fallback: Just print many newlines
+                    print('\n' * 100)
                 
                 # Display usando TU FORMATO
                 display_spartan_monitoring_status(monitor, timeframe)
